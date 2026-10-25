@@ -1,0 +1,330 @@
+name: build
+on: [push, workflow_dispatch]
+permissions:
+  contents: write
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project (first run only)
+        run: |
+          if [ ! -d app ]; then
+          J=app/src/main/java/app/tunes
+          mkdir -p $J app/src/main/res/values
+
+          cat > settings.gradle.kts <<'EOF'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement {
+              repositories { google(); mavenCentral(); maven("https://jitpack.io") }
+          }
+          rootProject.name = "tunes"
+          include(":app")
+          EOF
+
+          cat > build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application") version "8.7.3" apply false
+              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
+              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
+          }
+          EOF
+
+          cat > gradle.properties <<'EOF'
+          org.gradle.jvmargs=-Xmx3g
+          android.useAndroidX=true
+          EOF
+
+          cat > app/build.gradle.kts <<'EOF'
+          plugins {
+              id("com.android.application")
+              id("org.jetbrains.kotlin.android")
+              id("org.jetbrains.kotlin.plugin.compose")
+          }
+          android {
+              namespace = "app.tunes"
+              compileSdk = 35
+              defaultConfig {
+                  applicationId = "app.tunes"
+                  minSdk = 26
+                  targetSdk = 35
+                  versionCode = 1
+                  versionName = "0.1"
+              }
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+                  isCoreLibraryDesugaringEnabled = true
+              }
+              kotlinOptions { jvmTarget = "17" }
+              buildFeatures { compose = true }
+              packaging { resources.excludes += "META-INF/*" }
+          }
+          dependencies {
+              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
+              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
+              implementation("androidx.compose.material3:material3")
+              implementation("androidx.compose.material:material-icons-extended")
+              implementation("androidx.activity:activity-compose:1.9.3")
+              implementation("androidx.media3:media3-exoplayer:1.5.1")
+              implementation("io.coil-kt:coil-compose:2.7.0")
+              implementation("com.squareup.okhttp3:okhttp:4.12.0")
+              implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
+          }
+          EOF
+
+          cat > app/src/main/AndroidManifest.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <application
+                  android:label="Tunes"
+                  android:theme="@style/Theme.Tunes">
+                  <activity android:name=".MainActivity" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+
+          cat > app/src/main/res/values/themes.xml <<'EOF'
+          <resources>
+              <style name="Theme.Tunes" parent="@android:style/Theme.Material.NoActionBar" />
+          </resources>
+          EOF
+
+          cat > $J/Net.kt <<'EOF'
+          package app.tunes
+
+          import okhttp3.OkHttpClient
+          import okhttp3.RequestBody.Companion.toRequestBody
+          import org.schabi.newpipe.extractor.downloader.Downloader
+          import org.schabi.newpipe.extractor.downloader.Request
+          import org.schabi.newpipe.extractor.downloader.Response
+          import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+
+          class Net : Downloader() {
+              private val c = OkHttpClient()
+              override fun execute(r: Request): Response {
+                  val m = r.httpMethod()
+                  var body = r.dataToSend()?.toRequestBody()
+                  if (body == null && m == "POST") body = ByteArray(0).toRequestBody()
+                  val b = okhttp3.Request.Builder().url(r.url()).method(m, body)
+                  b.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0")
+                  r.headers().forEach { (k, v) ->
+                      b.removeHeader(k)
+                      v.forEach { b.addHeader(k, it) }
+                  }
+                  val res = c.newCall(b.build()).execute()
+                  if (res.code == 429) { res.close(); throw ReCaptchaException("429", r.url()) }
+                  val text = res.body?.string()
+                  return Response(res.code, res.message, res.headers.toMultimap(), text, res.request.url.toString())
+              }
+          }
+          EOF
+
+          cat > $J/Repo.kt <<'EOF'
+          package app.tunes
+
+          import org.schabi.newpipe.extractor.NewPipe
+          import org.schabi.newpipe.extractor.ServiceList
+          import org.schabi.newpipe.extractor.search.SearchInfo
+          import org.schabi.newpipe.extractor.stream.StreamInfo
+          import org.schabi.newpipe.extractor.stream.StreamInfoItem
+          import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory as F
+
+          data class Song(val title: String, val artist: String, val url: String, val art: String?)
+
+          object Repo {
+              private var ready = false
+              private fun init() { if (!ready) { NewPipe.init(Net()); ready = true } }
+
+              fun search(q: String): List<Song> {
+                  init()
+                  val yt = ServiceList.YouTube
+                  val h = yt.searchQHFactory.fromQuery(q, listOf(F.MUSIC_SONGS), "")
+                  return SearchInfo.getInfo(yt, h).relatedItems
+                      .filterIsInstance<StreamInfoItem>()
+                      .map { Song(it.name, it.uploaderName ?: "", it.url, it.thumbnails.firstOrNull()?.url) }
+              }
+
+              fun streamUrl(url: String): String {
+                  init()
+                  val i = StreamInfo.getInfo(url)
+                  return i.audioStreams.maxByOrNull { it.averageBitrate }!!.content
+              }
+          }
+          EOF
+
+          cat > $J/MainActivity.kt <<'EOF'
+          package app.tunes
+
+          import android.os.Build
+          import android.os.Bundle
+          import androidx.activity.ComponentActivity
+          import androidx.activity.compose.setContent
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.foundation.text.KeyboardActions
+          import androidx.compose.foundation.text.KeyboardOptions
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Pause
+          import androidx.compose.material.icons.filled.PlayArrow
+          import androidx.compose.material.icons.filled.Search
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.input.ImeAction
+          import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.dp
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.Player
+          import androidx.media3.exoplayer.ExoPlayer
+          import coil.compose.AsyncImage
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+
+          class MainActivity : ComponentActivity() {
+              override fun onCreate(s: Bundle?) {
+                  super.onCreate(s)
+                  setContent { Theme { App() } }
+              }
+          }
+
+          @Composable
+          fun Theme(c: @Composable () -> Unit) {
+              val ctx = LocalContext.current
+              val dark = androidx.compose.foundation.isSystemInDarkTheme()
+              val cs = if (Build.VERSION.SDK_INT >= 31)
+                  (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx))
+              else (if (dark) darkColorScheme() else lightColorScheme())
+              MaterialTheme(colorScheme = cs, content = c)
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun App() {
+              val ctx = LocalContext.current
+              val scope = rememberCoroutineScope()
+              val player = remember { ExoPlayer.Builder(ctx).build() }
+              DisposableEffect(Unit) { onDispose { player.release() } }
+
+              var q by remember { mutableStateOf("") }
+              var results by remember { mutableStateOf(listOf<Song>()) }
+              var now by remember { mutableStateOf<Song?>(null) }
+              var playing by remember { mutableStateOf(false) }
+              var loading by remember { mutableStateOf(false) }
+              var err by remember { mutableStateOf<String?>(null) }
+
+              DisposableEffect(player) {
+                  val l = object : Player.Listener {
+                      override fun onIsPlayingChanged(p: Boolean) { playing = p }
+                  }
+                  player.addListener(l)
+                  onDispose { player.removeListener(l) }
+              }
+
+              fun search() = scope.launch {
+                  loading = true; err = null
+                  runCatching { withContext(Dispatchers.IO) { Repo.search(q) } }
+                      .onSuccess { results = it }.onFailure { err = it.message }
+                  loading = false
+              }
+
+              fun play(s: Song) = scope.launch {
+                  now = s; err = null
+                  runCatching { withContext(Dispatchers.IO) { Repo.streamUrl(s.url) } }
+                      .onSuccess { player.setMediaItem(MediaItem.fromUri(it)); player.prepare(); player.play() }
+                      .onFailure { err = it.message }
+              }
+
+              Scaffold(
+                  bottomBar = {
+                      now?.let { s ->
+                          Surface(
+                              tonalElevation = 3.dp,
+                              shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Row(
+                                  Modifier.navigationBarsPadding().padding(12.dp),
+                                  verticalAlignment = Alignment.CenterVertically
+                              ) {
+                                  AsyncImage(s.art, null, Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
+                                  Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                                      Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          style = MaterialTheme.typography.titleMedium)
+                                      Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          style = MaterialTheme.typography.bodySmall)
+                                  }
+                                  FilledIconButton(onClick = { if (playing) player.pause() else player.play() }) {
+                                      Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null)
+                                  }
+                              }
+                          }
+                      }
+                  }
+              ) { pad ->
+                  Column(Modifier.padding(pad).statusBarsPadding().padding(horizontal = 16.dp)) {
+                      SearchBar(
+                          query = q, onQueryChange = { q = it }, onSearch = { search() },
+                          active = false, onActiveChange = {},
+                          placeholder = { Text("Search songs") },
+                          leadingIcon = { Icon(Icons.Filled.Search, null) },
+                          modifier = Modifier.fillMaxWidth()
+                      ) {}
+                      Spacer(Modifier.height(8.dp))
+                      if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                      err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                      LazyColumn {
+                          items(results) { s ->
+                              ListItem(
+                                  headlineContent = { Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                  supportingContent = { Text(s.artist, maxLines = 1) },
+                                  leadingContent = {
+                                      AsyncImage(s.art, null, Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
+                                  },
+                                  modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { play(s) }
+                              )
+                          }
+                      }
+                  }
+              }
+          }
+          EOF
+
+          printf 'build/\n.gradle/\n*.iml\nlocal.properties\n' > .gitignore
+          touch .generated
+          fi
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 17 }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: 8.10.2 }
+      - run: gradle assembleDebug --no-daemon
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tunes-debug
+          path: app/build/outputs/apk/debug/*.apk
+      - name: Commit generated sources
+        run: |
+          if [ -f .generated ]; then
+            rm .generated
+            git config user.name github-actions
+            git config user.email actions@github.com
+            git add -A
+            git commit -qm "add project sources"
+            git push
+          fi
+
+
+          
