@@ -7,9 +7,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate project (first run only)
+      - name: Generate project v2 (first run only)
         run: |
-          if [ ! -d app ]; then
+          if [ ! -f .v2 ]; then
+          rm -rf app/src
           J=app/src/main/java/app/tunes
           mkdir -p $J app/src/main/res/values
 
@@ -48,8 +49,8 @@ jobs:
                   applicationId = "app.tunes"
                   minSdk = 26
                   targetSdk = 35
-                  versionCode = 1
-                  versionName = "0.1"
+                  versionCode = 2
+                  versionName = "0.2"
               }
               compileOptions {
                   sourceCompatibility = JavaVersion.VERSION_17
@@ -66,7 +67,9 @@ jobs:
               implementation("androidx.compose.material3:material3")
               implementation("androidx.compose.material:material-icons-extended")
               implementation("androidx.activity:activity-compose:1.9.3")
+              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
               implementation("androidx.media3:media3-exoplayer:1.5.1")
+              implementation("androidx.media3:media3-session:1.5.1")
               implementation("io.coil-kt:coil-compose:2.7.0")
               implementation("com.squareup.okhttp3:okhttp:4.12.0")
               implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
@@ -77,9 +80,19 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
-              <application
-                  android:label="Tunes"
-                  android:theme="@style/Theme.Tunes">
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+              <application android:label="Tunes" android:theme="@style/Theme.Tunes">
+                  <service
+                      android:name=".PlayerService"
+                      android:exported="true"
+                      android:foregroundServiceType="mediaPlayback">
+                      <intent-filter>
+                          <action android:name="androidx.media3.session.MediaSessionService" />
+                      </intent-filter>
+                  </service>
                   <activity android:name=".MainActivity" android:exported="true">
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
@@ -106,19 +119,22 @@ jobs:
           import org.schabi.newpipe.extractor.downloader.Response
           import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
 
+          const val UA = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
+
+          object Http { val c = OkHttpClient() }
+
           class Net : Downloader() {
-              private val c = OkHttpClient()
               override fun execute(r: Request): Response {
                   val m = r.httpMethod()
                   var body = r.dataToSend()?.toRequestBody()
                   if (body == null && m == "POST") body = ByteArray(0).toRequestBody()
                   val b = okhttp3.Request.Builder().url(r.url()).method(m, body)
-                  b.header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0")
+                  b.header("User-Agent", UA)
                   r.headers().forEach { (k, v) ->
                       b.removeHeader(k)
                       v.forEach { b.addHeader(k, it) }
                   }
-                  val res = c.newCall(b.build()).execute()
+                  val res = Http.c.newCall(b.build()).execute()
                   if (res.code == 429) { res.close(); throw ReCaptchaException("429", r.url()) }
                   val text = res.body?.string()
                   return Response(res.code, res.message, res.headers.toMultimap(), text, res.request.url.toString())
@@ -129,182 +145,663 @@ jobs:
           cat > $J/Repo.kt <<'EOF'
           package app.tunes
 
+          import android.net.Uri
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.MediaMetadata
+          import org.json.JSONArray
+          import org.json.JSONObject
           import org.schabi.newpipe.extractor.NewPipe
           import org.schabi.newpipe.extractor.ServiceList
+          import org.schabi.newpipe.extractor.MediaFormat
           import org.schabi.newpipe.extractor.search.SearchInfo
           import org.schabi.newpipe.extractor.stream.StreamInfo
           import org.schabi.newpipe.extractor.stream.StreamInfoItem
           import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory as F
 
-          data class Song(val title: String, val artist: String, val url: String, val art: String?)
+          data class Song(val id: String, val title: String, val artist: String, val art: String?)
+
+          fun Song.item(): MediaItem = MediaItem.Builder()
+              .setMediaId(id).setUri(id)
+              .setMediaMetadata(
+                  MediaMetadata.Builder().setTitle(title).setArtist(artist)
+                      .setArtworkUri(art?.let { Uri.parse(it) }).build()
+              ).build()
+
+          fun MediaItem.song() = Song(
+              mediaId, mediaMetadata.title?.toString() ?: "", mediaMetadata.artist?.toString() ?: "",
+              mediaMetadata.artworkUri?.toString()
+          )
 
           object Repo {
               private var ready = false
-              private fun init() { if (!ready) { NewPipe.init(Net()); ready = true } }
+              @Synchronized fun init() { if (!ready) { NewPipe.init(Net()); ready = true } }
+
+              private fun StreamInfoItem.toSong() =
+                  Song(url, name, (uploaderName ?: "").removeSuffix(" - Topic"), thumbnails.firstOrNull()?.url)
 
               fun search(q: String): List<Song> {
                   init()
                   val yt = ServiceList.YouTube
                   val h = yt.searchQHFactory.fromQuery(q, listOf(F.MUSIC_SONGS), "")
-                  return SearchInfo.getInfo(yt, h).relatedItems
-                      .filterIsInstance<StreamInfoItem>()
-                      .map { Song(it.name, it.uploaderName ?: "", it.url, it.thumbnails.firstOrNull()?.url) }
+                  return SearchInfo.getInfo(yt, h).relatedItems.filterIsInstance<StreamInfoItem>().map { it.toSong() }
               }
 
-              fun streamUrl(url: String): String {
+              fun related(url: String): List<Song> {
                   init()
-                  val i = StreamInfo.getInfo(url)
-                  return i.audioStreams.maxByOrNull { it.averageBitrate }!!.content
+                  return StreamInfo.getInfo(url).relatedItems.filterIsInstance<StreamInfoItem>().map { it.toSong() }
               }
+
+              private val urls = HashMap<String, Pair<Long, String>>()
+              fun streamUrl(url: String): String {
+                  synchronized(urls) {
+                      urls[url]?.let { if (System.currentTimeMillis() - it.first < 2 * 3600_000L) return it.second }
+                  }
+                  init()
+                  val a = StreamInfo.getInfo(url).audioStreams
+                  val best = (a.filter { it.format == MediaFormat.M4A }.ifEmpty { a }).maxByOrNull { it.averageBitrate }
+                      ?: error("no audio stream")
+                  val u = best.content
+                  synchronized(urls) { urls[url] = System.currentTimeMillis() to u }
+                  return u
+              }
+
+              private fun clean(t: String) = t.replace(Regex("\\s*[\\(\\[][^\\)\\]]*[\\)\\]]"), "").trim()
+
+              fun lyrics(title: String, artist: String): List<Pair<Long, String>> {
+                  val u = "https://lrclib.net/api/search?track_name=${Uri.encode(clean(title))}&artist_name=${Uri.encode(artist)}"
+                  val req = okhttp3.Request.Builder().url(u).header("User-Agent", "Tunes/0.2").build()
+                  val body = Http.c.newCall(req).execute().use { it.body?.string() } ?: return emptyList()
+                  val arr = JSONArray(body)
+                  for (i in 0 until arr.length()) {
+                      val s = arr.getJSONObject(i).optString("syncedLyrics")
+                      if (s.isNotBlank()) return parseLrc(s)
+                  }
+                  return emptyList()
+              }
+
+              private val lrc = Regex("""\[(\d+):(\d+)(?:[.:](\d+))?](.*)""")
+              private fun parseLrc(s: String) = s.lines().mapNotNull { l ->
+                  lrc.matchEntire(l.trim())?.let { m ->
+                      val (mm, ss, f, t) = m.destructured
+                      val ms = mm.toLong() * 60000 + ss.toLong() * 1000 + (if (f.isEmpty()) 0 else f.padEnd(3, '0').take(3).toLong())
+                      ms to t.trim().ifEmpty { "♪" }
+                  }
+              }
+          }
+
+          object Store {
+              private lateinit var sp: android.content.SharedPreferences
+              fun init(c: android.content.Context) { sp = c.getSharedPreferences("s", 0) }
+              fun load(k: String): List<Song> = runCatching {
+                  val a = JSONArray(sp.getString(k, "[]"))
+                  (0 until a.length()).map {
+                      val o = a.getJSONObject(it)
+                      Song(o.getString("id"), o.getString("t"), o.getString("a"), o.optString("r").ifEmpty { null })
+                  }
+              }.getOrDefault(emptyList())
+              fun save(k: String, l: List<Song>) {
+                  val a = JSONArray()
+                  l.forEach { a.put(JSONObject().put("id", it.id).put("t", it.title).put("a", it.artist).put("r", it.art ?: "")) }
+                  sp.edit().putString(k, a.toString()).apply()
+              }
+          }
+          EOF
+
+          cat > $J/PlayerService.kt <<'EOF'
+          package app.tunes
+
+          import android.content.Context
+          import android.content.Intent
+          import android.net.Uri
+          import androidx.media3.common.AudioAttributes
+          import androidx.media3.common.C
+          import androidx.media3.database.StandaloneDatabaseProvider
+          import androidx.media3.datasource.DefaultHttpDataSource
+          import androidx.media3.datasource.ResolvingDataSource
+          import androidx.media3.datasource.cache.CacheDataSource
+          import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+          import androidx.media3.datasource.cache.SimpleCache
+          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+          import androidx.media3.session.MediaSession
+          import androidx.media3.session.MediaSessionService
+          import java.io.File
+          import java.io.IOException
+
+          object MediaCache {
+              private var c: SimpleCache? = null
+              @Synchronized fun get(ctx: Context): SimpleCache = c ?: SimpleCache(
+                  File(ctx.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(512L * 1024 * 1024),
+                  StandaloneDatabaseProvider(ctx)
+              ).also { c = it }
+          }
+
+          class PlayerService : MediaSessionService() {
+              private var session: MediaSession? = null
+
+              override fun onCreate() {
+                  super.onCreate()
+                  val http = DefaultHttpDataSource.Factory().setUserAgent(UA).setAllowCrossProtocolRedirects(true)
+                  val resolving = ResolvingDataSource.Factory(http, ResolvingDataSource.Resolver { spec ->
+                      val u = spec.uri.toString()
+                      try {
+                          if (u.contains("youtube.com/watch")) spec.withUri(Uri.parse(Repo.streamUrl(u))) else spec
+                      } catch (e: Exception) { throw IOException(e) }
+                  })
+                  val cached = CacheDataSource.Factory().setCache(MediaCache.get(this))
+                      .setUpstreamDataSourceFactory(resolving)
+                      .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
+                  val player = ExoPlayer.Builder(this)
+                      .setMediaSourceFactory(DefaultMediaSourceFactory(cached))
+                      .setAudioAttributes(
+                          AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
+                              .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true
+                      )
+                      .setHandleAudioBecomingNoisy(true)
+                      .build()
+                  session = MediaSession.Builder(this, player).build()
+              }
+
+              override fun onGetSession(c: MediaSession.ControllerInfo) = session
+
+              override fun onTaskRemoved(i: Intent?) {
+                  val p = session?.player
+                  if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
+              }
+
+              override fun onDestroy() {
+                  session?.run { player.release(); release() }
+                  session = null
+                  super.onDestroy()
+              }
+          }
+          EOF
+
+          cat > $J/Vm.kt <<'EOF'
+          package app.tunes
+
+          import android.app.Application
+          import android.content.ComponentName
+          import androidx.compose.runtime.*
+          import androidx.core.content.ContextCompat
+          import androidx.lifecycle.AndroidViewModel
+          import androidx.lifecycle.viewModelScope
+          import androidx.media3.common.MediaItem
+          import androidx.media3.common.PlaybackException
+          import androidx.media3.common.Player
+          import androidx.media3.common.Timeline
+          import androidx.media3.session.MediaController
+          import androidx.media3.session.SessionToken
+          import kotlinx.coroutines.Dispatchers
+          import kotlinx.coroutines.launch
+          import kotlinx.coroutines.withContext
+
+          class Vm(app: Application) : AndroidViewModel(app) {
+              var tab by mutableIntStateOf(0)
+              var q by mutableStateOf("")
+              var results by mutableStateOf<List<Song>>(emptyList())
+              var loading by mutableStateOf(false)
+              var err by mutableStateOf<String?>(null)
+              var liked by mutableStateOf<List<Song>>(emptyList())
+              var history by mutableStateOf<List<Song>>(emptyList())
+              var suggestions by mutableStateOf<List<Song>>(emptyList())
+              var queue by mutableStateOf<List<MediaItem>>(emptyList())
+              var cur by mutableStateOf<MediaItem?>(null)
+              var playing by mutableStateOf(false)
+              var pos by mutableLongStateOf(0L)
+              var dur by mutableLongStateOf(0L)
+              var shuffle by mutableStateOf(false)
+              var repeat by mutableIntStateOf(0)
+              var lyrics by mutableStateOf<List<Pair<Long, String>>>(emptyList())
+              private var mc: MediaController? = null
+
+              private val l = object : Player.Listener {
+                  override fun onIsPlayingChanged(p: Boolean) { playing = p }
+                  override fun onMediaItemTransition(i: MediaItem?, r: Int) { sync(); i?.let { track(it) } }
+                  override fun onTimelineChanged(t: Timeline, r: Int) { sync() }
+                  override fun onShuffleModeEnabledChanged(b: Boolean) { shuffle = b }
+                  override fun onRepeatModeChanged(m: Int) { repeat = m }
+                  override fun onPlayerError(e: PlaybackException) {
+                      err = e.errorCodeName + (e.cause?.message?.let { ": $it" } ?: "")
+                  }
+              }
+
+              init {
+                  Store.init(app)
+                  liked = Store.load("liked")
+                  history = Store.load("hist")
+                  val t = SessionToken(app, ComponentName(app, PlayerService::class.java))
+                  val f = MediaController.Builder(app, t).buildAsync()
+                  f.addListener({
+                      runCatching { f.get() }.onSuccess { c ->
+                          mc = c; c.addListener(l); playing = c.isPlaying
+                          shuffle = c.shuffleModeEnabled; repeat = c.repeatMode; sync()
+                          if (c.currentMediaItem != null) loadLyrics(c.currentMediaItem!!)
+                      }
+                  }, ContextCompat.getMainExecutor(app))
+                  viewModelScope.launch {
+                      val r = withContext(Dispatchers.IO) {
+                          runCatching {
+                              val h = history.firstOrNull()
+                              if (h != null) Repo.related(h.id) else Repo.search("top hits")
+                          }.getOrDefault(emptyList())
+                      }
+                      suggestions = r
+                  }
+              }
+
+              private fun sync() {
+                  val c = mc ?: return
+                  cur = c.currentMediaItem
+                  queue = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
+              }
+
+              fun tick() { mc?.let { pos = it.currentPosition; dur = it.duration.coerceAtLeast(0L) } }
+
+              private fun track(i: MediaItem) {
+                  val s = i.song()
+                  history = (listOf(s) + history.filter { it.id != s.id }).take(50)
+                  Store.save("hist", history)
+                  loadLyrics(i)
+                  extend()
+              }
+
+              private fun loadLyrics(i: MediaItem) {
+                  lyrics = emptyList()
+                  viewModelScope.launch {
+                      val r = withContext(Dispatchers.IO) {
+                          runCatching { Repo.lyrics(i.mediaMetadata.title.toString(), i.mediaMetadata.artist.toString()) }
+                              .getOrDefault(emptyList())
+                      }
+                      if (cur?.mediaId == i.mediaId) lyrics = r
+                  }
+              }
+
+              private fun extend() {
+                  val c = mc ?: return
+                  if (c.currentMediaItemIndex < c.mediaItemCount - 2) return
+                  val id = c.currentMediaItem?.mediaId ?: return
+                  viewModelScope.launch {
+                      val r = withContext(Dispatchers.IO) { runCatching { Repo.related(id) }.getOrDefault(emptyList()) }
+                      val have = queue.map { it.mediaId }.toSet()
+                      val add = r.filter { it.id !in have }.take(15).map { it.item() }
+                      if (add.isNotEmpty()) c.addMediaItems(add)
+                  }
+              }
+
+              fun search() {
+                  if (q.isBlank()) return
+                  viewModelScope.launch {
+                      loading = true; err = null
+                      runCatching { withContext(Dispatchers.IO) { Repo.search(q) } }
+                          .onSuccess { results = it }.onFailure { err = it.message ?: "search failed" }
+                      loading = false
+                  }
+              }
+
+              fun play(list: List<Song>, i: Int) {
+                  val c = mc ?: return
+                  err = null
+                  c.setMediaItems(list.map { it.item() }, i, 0L)
+                  c.prepare(); c.play()
+              }
+
+              fun playNext(s: Song) {
+                  val c = mc ?: return
+                  if (c.mediaItemCount == 0) play(listOf(s), 0) else c.addMediaItem(c.currentMediaItemIndex + 1, s.item())
+              }
+
+              fun addQueue(s: Song) {
+                  val c = mc ?: return
+                  if (c.mediaItemCount == 0) play(listOf(s), 0) else c.addMediaItem(s.item())
+              }
+
+              fun isLiked(s: Song) = liked.any { it.id == s.id }
+              fun toggleLike(s: Song) {
+                  liked = if (isLiked(s)) liked.filter { it.id != s.id } else listOf(s) + liked
+                  Store.save("liked", liked)
+              }
+
+              fun toggle() { mc?.let { if (it.isPlaying) it.pause() else it.play() } }
+              fun next() { mc?.seekToNextMediaItem() }
+              fun prev() { mc?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
+              fun seek(ms: Long) { mc?.seekTo(ms) }
+              fun jump(i: Int) { mc?.seekTo(i, 0L) }
+              fun toggleShuffle() { mc?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
+              fun cycleRepeat() { mc?.let { it.repeatMode = when (it.repeatMode) { 0 -> 2; 2 -> 1; else -> 0 } } }
+
+              override fun onCleared() { mc?.removeListener(l); mc?.release() }
           }
           EOF
 
           cat > $J/MainActivity.kt <<'EOF'
           package app.tunes
 
+          import android.Manifest
           import android.os.Build
           import android.os.Bundle
           import androidx.activity.ComponentActivity
+          import androidx.activity.compose.BackHandler
+          import androidx.activity.compose.rememberLauncherForActivityResult
           import androidx.activity.compose.setContent
+          import androidx.activity.enableEdgeToEdge
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.core.animateDpAsState
+          import androidx.compose.animation.slideInVertically
+          import androidx.compose.animation.slideOutVertically
           import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.isSystemInDarkTheme
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
-          import androidx.compose.foundation.lazy.items
+          import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.itemsIndexed
+          import androidx.compose.foundation.lazy.rememberLazyListState
+          import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.foundation.text.KeyboardActions
           import androidx.compose.foundation.text.KeyboardOptions
           import androidx.compose.material.icons.Icons
-          import androidx.compose.material.icons.filled.Pause
-          import androidx.compose.material.icons.filled.PlayArrow
-          import androidx.compose.material.icons.filled.Search
+          import androidx.compose.material.icons.automirrored.filled.QueueMusic
+          import androidx.compose.material.icons.filled.*
           import androidx.compose.material3.*
           import androidx.compose.runtime.*
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.layout.ContentScale
           import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.input.ImeAction
           import androidx.compose.ui.text.style.TextOverflow
+          import androidx.compose.ui.unit.Dp
           import androidx.compose.ui.unit.dp
-          import androidx.media3.common.MediaItem
-          import androidx.media3.common.Player
-          import androidx.media3.exoplayer.ExoPlayer
+          import androidx.lifecycle.viewmodel.compose.viewModel
           import coil.compose.AsyncImage
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.launch
-          import kotlinx.coroutines.withContext
+          import kotlinx.coroutines.delay
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(s: Bundle?) {
                   super.onCreate(s)
-                  setContent { Theme { App() } }
+                  enableEdgeToEdge()
+                  setContent { Theme { Root(viewModel()) } }
               }
           }
 
           @Composable
           fun Theme(c: @Composable () -> Unit) {
               val ctx = LocalContext.current
-              val dark = androidx.compose.foundation.isSystemInDarkTheme()
+              val dark = isSystemInDarkTheme()
               val cs = if (Build.VERSION.SDK_INT >= 31)
                   (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx))
               else (if (dark) darkColorScheme() else lightColorScheme())
-              MaterialTheme(colorScheme = cs, content = c)
+              MaterialTheme(
+                  colorScheme = cs,
+                  shapes = Shapes(
+                      small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp),
+                      large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(36.dp)
+                  ),
+                  content = c
+              )
           }
 
-          @OptIn(ExperimentalMaterial3Api::class)
+          fun fmt(ms: Long) = String.format("%d:%02d", ms / 60000, ms / 1000 % 60)
+
           @Composable
-          fun App() {
-              val ctx = LocalContext.current
-              val scope = rememberCoroutineScope()
-              val player = remember { ExoPlayer.Builder(ctx).build() }
-              DisposableEffect(Unit) { onDispose { player.release() } }
+          fun Art(url: String?, size: Dp, r: Dp = 14.dp) = AsyncImage(
+              model = url, contentDescription = null, contentScale = ContentScale.Crop,
+              modifier = Modifier.size(size).clip(RoundedCornerShape(r))
+          )
 
-              var q by remember { mutableStateOf("") }
-              var results by remember { mutableStateOf(listOf<Song>()) }
-              var now by remember { mutableStateOf<Song?>(null) }
-              var playing by remember { mutableStateOf(false) }
-              var loading by remember { mutableStateOf(false) }
-              var err by remember { mutableStateOf<String?>(null) }
-
-              DisposableEffect(player) {
-                  val l = object : Player.Listener {
-                      override fun onIsPlayingChanged(p: Boolean) { playing = p }
-                  }
-                  player.addListener(l)
-                  onDispose { player.removeListener(l) }
+          @Composable
+          fun Root(vm: Vm) {
+              var full by remember { mutableStateOf(false) }
+              val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
+              LaunchedEffect(Unit) {
+                  if (Build.VERSION.SDK_INT >= 33) perm.launch(Manifest.permission.POST_NOTIFICATIONS)
+                  while (true) { vm.tick(); delay(500) }
               }
-
-              fun search() = scope.launch {
-                  loading = true; err = null
-                  runCatching { withContext(Dispatchers.IO) { Repo.search(q) } }
-                      .onSuccess { results = it }.onFailure { err = it.message }
-                  loading = false
-              }
-
-              fun play(s: Song) = scope.launch {
-                  now = s; err = null
-                  runCatching { withContext(Dispatchers.IO) { Repo.streamUrl(s.url) } }
-                      .onSuccess { player.setMediaItem(MediaItem.fromUri(it)); player.prepare(); player.play() }
-                      .onFailure { err = it.message }
-              }
-
-              Scaffold(
-                  bottomBar = {
-                      now?.let { s ->
-                          Surface(
-                              tonalElevation = 3.dp,
-                              shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                              modifier = Modifier.fillMaxWidth()
-                          ) {
-                              Row(
-                                  Modifier.navigationBarsPadding().padding(12.dp),
-                                  verticalAlignment = Alignment.CenterVertically
-                              ) {
-                                  AsyncImage(s.art, null, Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)))
-                                  Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                                      Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                          style = MaterialTheme.typography.titleMedium)
-                                      Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                          style = MaterialTheme.typography.bodySmall)
+              BackHandler(full) { full = false }
+              Box(Modifier.fillMaxSize()) {
+                  Scaffold(
+                      bottomBar = {
+                          Column {
+                              vm.err?.let {
+                                  Surface(color = MaterialTheme.colorScheme.errorContainer, modifier = Modifier.fillMaxWidth().clickable { vm.err = null }) {
+                                      Text(it, Modifier.padding(12.dp), color = MaterialTheme.colorScheme.onErrorContainer,
+                                          style = MaterialTheme.typography.bodySmall, maxLines = 3)
                                   }
-                                  FilledIconButton(onClick = { if (playing) player.pause() else player.play() }) {
-                                      Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null)
+                              }
+                              if (vm.cur != null) Mini(vm) { full = true }
+                              NavigationBar {
+                                  listOf("Home" to Icons.Filled.Home, "Search" to Icons.Filled.Search,
+                                      "Library" to Icons.Filled.LibraryMusic).forEachIndexed { i, (n, ic) ->
+                                      NavigationBarItem(vm.tab == i, { vm.tab = i }, { Icon(ic, n) }, label = { Text(n) })
+                                  }
+                              }
+                          }
+                      }
+                  ) { pad ->
+                      Box(Modifier.padding(pad).fillMaxSize()) {
+                          when (vm.tab) { 0 -> Home(vm); 1 -> SearchTab(vm); else -> Library(vm) }
+                      }
+                  }
+                  AnimatedVisibility(full, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
+                      Full(vm) { full = false }
+                  }
+              }
+          }
+
+          @Composable
+          fun Mini(vm: Vm, open: () -> Unit) {
+              val s = vm.cur?.song() ?: return
+              Surface(
+                  onClick = open, color = MaterialTheme.colorScheme.secondaryContainer,
+                  shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), modifier = Modifier.fillMaxWidth()
+              ) {
+                  Column {
+                      Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Art(s.art, 48.dp)
+                          Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                              Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                              Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                          }
+                          IconButton(vm::toggle) { Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null) }
+                          IconButton(vm::next) { Icon(Icons.Filled.SkipNext, null) }
+                      }
+                      LinearProgressIndicator(
+                          progress = { if (vm.dur > 0) (vm.pos.toFloat() / vm.dur).coerceIn(0f, 1f) else 0f },
+                          modifier = Modifier.fillMaxWidth()
+                      )
+                  }
+              }
+          }
+
+          @Composable
+          fun SongRow(vm: Vm, list: List<Song>, i: Int) {
+              val s = list[i]
+              var m by remember { mutableStateOf(false) }
+              ListItem(
+                  headlineContent = { Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                  supportingContent = { Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                  leadingContent = { Art(s.art, 52.dp) },
+                  trailingContent = {
+                      Box {
+                          IconButton({ m = true }) { Icon(Icons.Filled.MoreVert, null) }
+                          DropdownMenu(m, { m = false }) {
+                              DropdownMenuItem({ Text("Play next") }, { vm.playNext(s); m = false })
+                              DropdownMenuItem({ Text("Add to queue") }, { vm.addQueue(s); m = false })
+                              DropdownMenuItem({ Text(if (vm.isLiked(s)) "Unlike" else "Like") }, { vm.toggleLike(s); m = false })
+                          }
+                      }
+                  },
+                  modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { vm.play(list, i) }
+              )
+          }
+
+          @Composable
+          fun Home(vm: Vm) {
+              LazyColumn(Modifier.statusBarsPadding(), contentPadding = PaddingValues(16.dp)) {
+                  item { Text("Tunes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
+                  if (vm.history.isNotEmpty()) {
+                      item { Text("Recently played", Modifier.padding(top = 20.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge) }
+                      item {
+                          val h = vm.history.take(15)
+                          LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                              itemsIndexed(h) { i, s ->
+                                  Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable { vm.play(h, i) }) {
+                                      Art(s.art, 140.dp, 24.dp)
+                                      Text(s.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          style = MaterialTheme.typography.labelLarge)
+                                      Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                                   }
                               }
                           }
                       }
                   }
-              ) { pad ->
-                  Column(Modifier.padding(pad).statusBarsPadding().padding(horizontal = 16.dp)) {
-                      SearchBar(
-                          query = q, onQueryChange = { q = it }, onSearch = { search() },
-                          active = false, onActiveChange = {},
-                          placeholder = { Text("Search songs") },
-                          leadingIcon = { Icon(Icons.Filled.Search, null) },
-                          modifier = Modifier.fillMaxWidth()
-                      ) {}
-                      Spacer(Modifier.height(8.dp))
-                      if (loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                      err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                      LazyColumn {
-                          items(results) { s ->
-                              ListItem(
-                                  headlineContent = { Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                                  supportingContent = { Text(s.artist, maxLines = 1) },
-                                  leadingContent = {
-                                      AsyncImage(s.art, null, Modifier.size(52.dp).clip(RoundedCornerShape(14.dp)))
-                                  },
-                                  modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable { play(s) }
-                              )
+                  item { Text(if (vm.history.isEmpty()) "Top hits" else "Recommended", Modifier.padding(top = 20.dp, bottom = 4.dp),
+                      style = MaterialTheme.typography.titleLarge) }
+                  itemsIndexed(vm.suggestions) { i, _ -> SongRow(vm, vm.suggestions, i) }
+              }
+          }
+
+          @Composable
+          fun SearchTab(vm: Vm) {
+              Column(Modifier.statusBarsPadding().padding(horizontal = 16.dp)) {
+                  OutlinedTextField(
+                      vm.q, { vm.q = it }, Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                      placeholder = { Text("Search songs") },
+                      leadingIcon = { Icon(Icons.Filled.Search, null) },
+                      singleLine = true, shape = RoundedCornerShape(32.dp),
+                      keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                      keyboardActions = KeyboardActions(onSearch = { vm.search() })
+                  )
+                  if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                  LazyColumn { itemsIndexed(vm.results) { i, _ -> SongRow(vm, vm.results, i) } }
+              }
+          }
+
+          @Composable
+          fun Library(vm: Vm) {
+              var t by remember { mutableIntStateOf(0) }
+              val list = if (t == 0) vm.liked else vm.history
+              Column(Modifier.statusBarsPadding()) {
+                  TabRow(t) {
+                      Tab(t == 0, { t = 0 }, text = { Text("Liked") })
+                      Tab(t == 1, { t = 1 }, text = { Text("History") })
+                  }
+                  if (list.isEmpty()) Text("Nothing here yet", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp)) {
+                      itemsIndexed(list) { i, _ -> SongRow(vm, list, i) }
+                  }
+              }
+          }
+
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun Full(vm: Vm, close: () -> Unit) {
+              val s = vm.cur?.song() ?: return
+              var lyr by remember { mutableStateOf(false) }
+              var showQ by remember { mutableStateOf(false) }
+              var drag by remember { mutableStateOf<Float?>(null) }
+              val frac = if (vm.dur > 0) (vm.pos.toFloat() / vm.dur).coerceIn(0f, 1f) else 0f
+              val corner by animateDpAsState(if (vm.playing) 24.dp else 40.dp, label = "pc")
+
+              Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+                  Column(Modifier.systemBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                          IconButton(close) { Icon(Icons.Filled.KeyboardArrowDown, null) }
+                          Row {
+                              IconButton({ lyr = !lyr }) {
+                                  Icon(Icons.Filled.Lyrics, null, tint = if (lyr) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
+                              }
+                              IconButton({ showQ = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) }
+                          }
+                      }
+                      Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
+                          if (lyr) Lyrics(vm) else AsyncImage(
+                              model = s.art, contentDescription = null, contentScale = ContentScale.Crop,
+                              modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(36.dp))
+                          )
+                      }
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Column(Modifier.weight(1f)) {
+                              Text(s.title, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                  style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                              Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium,
+                                  color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                          FilledTonalIconButton({ vm.toggleLike(s) }) {
+                              Icon(if (vm.isLiked(s)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, null)
+                          }
+                      }
+                      Slider(
+                          value = drag ?: frac, onValueChange = { drag = it },
+                          onValueChangeFinished = { drag?.let { vm.seek((it * vm.dur).toLong()) }; drag = null }
+                      )
+                      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                          Text(fmt(vm.pos), style = MaterialTheme.typography.labelMedium)
+                          Text(fmt(vm.dur), style = MaterialTheme.typography.labelMedium)
+                      }
+                      Row(
+                          Modifier.fillMaxWidth().padding(vertical = 16.dp),
+                          horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                      ) {
+                          FilledTonalIconToggleButton(vm.shuffle, { vm.toggleShuffle() }) { Icon(Icons.Filled.Shuffle, null) }
+                          IconButton(vm::prev, Modifier.size(56.dp)) { Icon(Icons.Filled.SkipPrevious, null, Modifier.size(36.dp)) }
+                          FilledIconButton(vm::toggle, Modifier.size(84.dp), shape = RoundedCornerShape(corner)) {
+                              Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, Modifier.size(44.dp))
+                          }
+                          IconButton(vm::next, Modifier.size(56.dp)) { Icon(Icons.Filled.SkipNext, null, Modifier.size(36.dp)) }
+                          FilledTonalIconToggleButton(vm.repeat != 0, { vm.cycleRepeat() }) {
+                              Icon(if (vm.repeat == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null)
                           }
                       }
                   }
               }
+
+              if (showQ) ModalBottomSheet({ showQ = false }) {
+                  val idx = vm.queue.indexOfFirst { it.mediaId == vm.cur?.mediaId }
+                  LazyColumn(contentPadding = PaddingValues(horizontal = 12.dp)) {
+                      itemsIndexed(vm.queue) { i, it ->
+                          val q = it.song()
+                          ListItem(
+                              headlineContent = { Text(q.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                              supportingContent = { Text(q.artist, maxLines = 1) },
+                              leadingContent = { Art(q.art, 48.dp) },
+                              colors = ListItemDefaults.colors(
+                                  containerColor = if (i == idx) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
+                              ),
+                              modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { vm.jump(i) }
+                          )
+                      }
+                  }
+              }
+          }
+
+          @Composable
+          fun Lyrics(vm: Vm) {
+              if (vm.lyrics.isEmpty()) {
+                  Text("No synced lyrics found", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                  return
+              }
+              val st = rememberLazyListState()
+              val idx = vm.lyrics.indexOfLast { it.first <= vm.pos }.coerceAtLeast(0)
+              LaunchedEffect(idx) { st.animateScrollToItem((idx - 2).coerceAtLeast(0)) }
+              LazyColumn(state = st, modifier = Modifier.fillMaxSize()) {
+                  itemsIndexed(vm.lyrics) { i, l ->
+                      Text(
+                          l.second, Modifier.padding(vertical = 8.dp).clickable { vm.seek(l.first) },
+                          style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold,
+                          color = if (i == idx) MaterialTheme.colorScheme.primary
+                          else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
+                      )
+                  }
+              }
           }
           EOF
-
           printf 'build/\n.gradle/\n*.iml\nlocal.properties\n' > .gitignore
-          touch .generated
+          touch .v2 .changed
           fi
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
@@ -317,14 +814,11 @@ jobs:
           path: app/build/outputs/apk/debug/*.apk
       - name: Commit generated sources
         run: |
-          if [ -f .generated ]; then
-            rm .generated
+          if [ -f .changed ]; then
+            rm .changed
             git config user.name github-actions
             git config user.email actions@github.com
             git add -A
-            git commit -qm "add project sources"
+            git commit -qm "tunes v2"
             git push
           fi
-
-
-          
