@@ -7,473 +7,495 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate project v2 (first run only)
+      - name: Apply v5 update (first run only)
         run: |
-          if [ ! -f .v2 ]; then
-          rm -rf app/src
+          if [ ! -f .v5 ]; then
           J=app/src/main/java/app/tunes
-          mkdir -p $J app/src/main/res/values
-
-          cat > settings.gradle.kts <<'EOF'
-          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
-          dependencyResolutionManagement {
-              repositories { google(); mavenCentral(); maven("https://jitpack.io") }
-          }
-          rootProject.name = "tunes"
-          include(":app")
-          EOF
-
-          cat > build.gradle.kts <<'EOF'
-          plugins {
-              id("com.android.application") version "8.7.3" apply false
-              id("org.jetbrains.kotlin.android") version "2.0.21" apply false
-              id("org.jetbrains.kotlin.plugin.compose") version "2.0.21" apply false
-          }
-          EOF
-
-          cat > gradle.properties <<'EOF'
-          org.gradle.jvmargs=-Xmx3g
-          android.useAndroidX=true
-          EOF
-
-          cat > app/build.gradle.kts <<'EOF'
-          plugins {
-              id("com.android.application")
-              id("org.jetbrains.kotlin.android")
-              id("org.jetbrains.kotlin.plugin.compose")
-          }
-          android {
-              namespace = "app.tunes"
-              compileSdk = 35
-              defaultConfig {
-                  applicationId = "app.tunes"
-                  minSdk = 26
-                  targetSdk = 35
-                  versionCode = 2
-                  versionName = "0.2"
-              }
-              compileOptions {
-                  sourceCompatibility = JavaVersion.VERSION_17
-                  targetCompatibility = JavaVersion.VERSION_17
-                  isCoreLibraryDesugaringEnabled = true
-              }
-              kotlinOptions { jvmTarget = "17" }
-              buildFeatures { compose = true }
-              packaging { resources.excludes += "META-INF/*" }
-          }
-          dependencies {
-              coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
-              implementation(platform("androidx.compose:compose-bom:2024.12.01"))
-              implementation("androidx.compose.material3:material3")
-              implementation("androidx.compose.material:material-icons-extended")
-              implementation("androidx.activity:activity-compose:1.9.3")
-              implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-              implementation("androidx.media3:media3-exoplayer:1.5.1")
-              implementation("androidx.media3:media3-session:1.5.1")
-              implementation("io.coil-kt:coil-compose:2.7.0")
-              implementation("com.squareup.okhttp3:okhttp:4.12.0")
-              implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.24.8")
-          }
-          EOF
-
-          cat > app/src/main/AndroidManifest.xml <<'EOF'
-          <?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.WAKE_LOCK" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
-              <application android:label="Tunes" android:theme="@style/Theme.Tunes">
-                  <service
-                      android:name=".PlayerService"
-                      android:exported="true"
-                      android:foregroundServiceType="mediaPlayback">
-                      <intent-filter>
-                          <action android:name="androidx.media3.session.MediaSessionService" />
-                      </intent-filter>
-                  </service>
-                  <activity android:name=".MainActivity" android:exported="true">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>
-          EOF
-
-          cat > app/src/main/res/values/themes.xml <<'EOF'
-          <resources>
-              <style name="Theme.Tunes" parent="@android:style/Theme.Material.NoActionBar" />
-          </resources>
-          EOF
-
-          cat > $J/Net.kt <<'EOF'
+          cat > $J/Expressive.kt <<'EOF'
           package app.tunes
 
-          import okhttp3.OkHttpClient
-          import okhttp3.RequestBody.Companion.toRequestBody
-          import org.schabi.newpipe.extractor.downloader.Downloader
-          import org.schabi.newpipe.extractor.downloader.Request
-          import org.schabi.newpipe.extractor.downloader.Response
-          import org.schabi.newpipe.extractor.exceptions.ReCaptchaException
+          import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.animateColorAsState
+          import androidx.compose.animation.core.*
+          import androidx.compose.animation.fadeIn
+          import androidx.compose.animation.fadeOut
+          import androidx.compose.animation.scaleIn
+          import androidx.compose.animation.scaleOut
+          import androidx.compose.animation.slideInVertically
+          import androidx.compose.animation.slideOutVertically
+          import androidx.compose.foundation.Canvas
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Add
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.draw.rotate
+          import androidx.compose.ui.geometry.Offset
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.Path
+          import androidx.compose.ui.graphics.StrokeCap
+          import androidx.compose.ui.graphics.StrokeJoin
+          import androidx.compose.ui.graphics.drawscope.DrawScope
+          import androidx.compose.ui.graphics.drawscope.Stroke
+          import androidx.compose.ui.graphics.drawscope.rotate as rotateDraw
+          import androidx.compose.ui.graphics.vector.ImageVector
+          import androidx.compose.ui.unit.Dp
+          import androidx.compose.ui.unit.dp
+          import kotlin.math.PI
+          import kotlin.math.cos
+          import kotlin.math.min
+          import kotlin.math.sin
 
-          const val UA = "Mozilla/5.0 (Windows NT 10.0; rv:128.0) Gecko/20100101 Firefox/128.0"
+          private val TAU = (2 * PI).toFloat()
 
-          object Http { val c = OkHttpClient() }
+          private fun DrawScope.wave(x0: Float, x1: Float, cy: Float, amp: Float, wl: Float, ph: Float, c: Color, sw: Float) {
+              if (x1 <= x0) return
+              if (amp < 0.5f) { drawLine(c, Offset(x0, cy), Offset(x1, cy), sw, StrokeCap.Round); return }
+              val p = Path()
+              p.moveTo(x0, cy + amp * sin(x0 / wl * TAU - ph))
+              var x = x0
+              while (x < x1) { x = min(x + 3f, x1); p.lineTo(x, cy + amp * sin(x / wl * TAU - ph)) }
+              drawPath(p, c, style = Stroke(sw, cap = StrokeCap.Round, join = StrokeJoin.Round))
+          }
 
-          class Net : Downloader() {
-              override fun execute(r: Request): Response {
-                  val m = r.httpMethod()
-                  var body = r.dataToSend()?.toRequestBody()
-                  if (body == null && m == "POST") body = ByteArray(0).toRequestBody()
-                  val b = okhttp3.Request.Builder().url(r.url()).method(m, body)
-                  b.header("User-Agent", UA)
-                  r.headers().forEach { (k, v) ->
-                      b.removeHeader(k)
-                      v.forEach { b.addHeader(k, it) }
+          /** Wavy linear progress. progress == null -> indeterminate. */
+          @Composable
+          fun WavyLine(progress: Float?, modifier: Modifier = Modifier, amp: Dp = 3.dp, wavelength: Dp = 30.dp, stroke: Dp = 4.dp) {
+              val act = MaterialTheme.colorScheme.primary
+              val trk = MaterialTheme.colorScheme.secondaryContainer
+              val tr = rememberInfiniteTransition(label = "w")
+              val ph by tr.animateFloat(0f, TAU, infiniteRepeatable(tween(1600, easing = LinearEasing)), label = "ph")
+              val ind by tr.animateFloat(
+                  0.15f, 0.9f, infiniteRepeatable(tween(1800, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "ind"
+              )
+              Canvas(modifier.height(amp * 2 + stroke + 4.dp)) {
+                  val f = (progress ?: ind).coerceIn(0f, 1f)
+                  val sw = stroke.toPx(); val a = amp.toPx(); val wl = wavelength.toPx(); val g = 5.dp.toPx()
+                  val x0 = sw / 2; val x1 = size.width - sw / 2; val cy = size.height / 2
+                  val ae = x0 + f * (x1 - x0)
+                  wave(x0, ae, cy, a, wl, ph, act, sw)
+                  wave(ae + g + sw, x1, cy, 0f, wl, 0f, trk, sw)
+                  drawCircle(act, 2.dp.toPx(), Offset(x1 - sw, cy))
+              }
+          }
+
+          /** M3E-style slider: gap around a bar handle, optionally wavy active track. */
+          @Composable
+          fun WavySlider(
+              value: Float, onChange: (Float) -> Unit, onDone: () -> Unit,
+              modifier: Modifier = Modifier, wavy: Boolean = true, playing: Boolean = true
+          ) {
+              val act = MaterialTheme.colorScheme.primary
+              val trk = MaterialTheme.colorScheme.secondaryContainer
+              val amp by animateDpAsState(if (wavy && playing) 3.dp else 0.dp, label = "amp")
+              val tr = rememberInfiniteTransition(label = "sw")
+              val ph by tr.animateFloat(0f, TAU, infiniteRepeatable(tween(1600, easing = LinearEasing)), label = "ph")
+              Slider(
+                  value = value, onValueChange = onChange, onValueChangeFinished = onDone, modifier = modifier,
+                  thumb = { Box(Modifier.width(4.dp).height(40.dp).clip(RoundedCornerShape(2.dp)).background(act)) },
+                  track = {
+                      Canvas(Modifier.fillMaxWidth().height(24.dp)) {
+                          val sw = 5.dp.toPx(); val a = amp.toPx(); val wl = 30.dp.toPx()
+                          val tw = 4.dp.toPx(); val gap = 8.dp.toPx()
+                          val cx = value.coerceIn(0f, 1f) * (size.width - tw) + tw / 2
+                          val cy = size.height / 2
+                          wave(sw / 2, cx - gap, cy, a, wl, ph, act, sw)
+                          wave(cx + gap, size.width - sw / 2, cy, 0f, wl, 0f, trk, sw)
+                          drawCircle(act, 2.dp.toPx(), Offset(size.width - sw, cy))
+                      }
                   }
-                  val res = Http.c.newCall(b.build()).execute()
-                  if (res.code == 429) { res.close(); throw ReCaptchaException("429", r.url()) }
-                  val text = res.body?.string()
-                  return Response(res.code, res.message, res.headers.toMultimap(), text, res.request.url.toString())
+              )
+          }
+
+          /** Morphing cookie loading indicator. */
+          @Composable
+          fun LoadingBlob(modifier: Modifier = Modifier.size(48.dp), contained: Boolean = false) {
+              val bg = MaterialTheme.colorScheme.primaryContainer
+              val fg = MaterialTheme.colorScheme.primary
+              val tr = rememberInfiniteTransition(label = "lb")
+              val rot by tr.animateFloat(0f, 360f, infiniteRepeatable(tween(4000, easing = LinearEasing)), label = "r")
+              val a by tr.animateFloat(
+                  0f, 1f, infiniteRepeatable(tween(1200, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "a"
+              )
+              Canvas(modifier) {
+                  val rad = size.minDimension / 2
+                  if (contained) drawCircle(bg, rad)
+                  val base = if (contained) rad * 0.62f else rad * 0.9f
+                  val p = Path()
+                  val n = 120
+                  for (i in 0..n) {
+                      val th = i.toFloat() / n * TAU
+                      val r = base * (0.82f + 0.14f * ((1 - a) * cos(6 * th) + a * cos(9 * th)))
+                      val x = center.x + r * cos(th)
+                      val y = center.y + r * sin(th)
+                      if (i == 0) p.moveTo(x, y) else p.lineTo(x, y)
+                  }
+                  p.close()
+                  rotateDraw(rot, center) { drawPath(p, fg) }
+              }
+          }
+
+          /** Connected button group: selected button goes fully round, neighbours keep tight inner corners. */
+          @Composable
+          fun ButtonGroupRow(
+              options: List<String>, selected: Int, onSelect: (Int) -> Unit,
+              modifier: Modifier = Modifier, icons: List<ImageVector>? = null
+          ) {
+              Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                  options.forEachIndexed { i, label ->
+                      val sel = i == selected
+                      val sc by animateDpAsState(if (sel || i == 0) 24.dp else 6.dp, label = "sc")
+                      val ec by animateDpAsState(if (sel || i == options.lastIndex) 24.dp else 6.dp, label = "ec")
+                      Surface(
+                          onClick = { onSelect(i) },
+                          shape = RoundedCornerShape(topStart = sc, bottomStart = sc, topEnd = ec, bottomEnd = ec),
+                          color = if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh,
+                          contentColor = if (sel) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                          modifier = Modifier.weight(1f).height(48.dp)
+                      ) {
+                          Row(Modifier.fillMaxSize(), Arrangement.Center, Alignment.CenterVertically) {
+                              icons?.getOrNull(i)?.let { Icon(it, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)) }
+                              Text(label, style = MaterialTheme.typography.labelLarge)
+                          }
+                      }
+                  }
+              }
+          }
+
+          class TbItem(val icon: ImageVector, val desc: String, val selected: Boolean, val onClick: () -> Unit)
+
+          /** Floating toolbar pill; selected item expands into a filled pill. */
+          @Composable
+          fun FloatingToolbar(items: List<TbItem>, modifier: Modifier = Modifier) {
+              Surface(
+                  shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.surfaceContainerHigh,
+                  tonalElevation = 3.dp, shadowElevation = 6.dp, modifier = modifier
+              ) {
+                  Row(Modifier.padding(6.dp), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                      items.forEach { it ->
+                          val bgc by animateColorAsState(if (it.selected) MaterialTheme.colorScheme.primary else Color.Transparent, label = "tb")
+                          val w by animateDpAsState(if (it.selected) 72.dp else 48.dp, label = "tw")
+                          Box(
+                              Modifier.height(48.dp).width(w).clip(RoundedCornerShape(50)).background(bgc).clickable(onClick = it.onClick),
+                              contentAlignment = Alignment.Center
+                          ) {
+                              Icon(it.icon, it.desc, tint = if (it.selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface)
+                          }
+                      }
+                  }
+              }
+          }
+
+          class FabItem(val label: String, val icon: ImageVector, val onClick: () -> Unit)
+
+          /** FAB that opens into a stack of labelled pills; the + turns into an x. */
+          @Composable
+          fun FabMenu(items: List<FabItem>, modifier: Modifier = Modifier) {
+              var open by remember { mutableStateOf(false) }
+              val rot by animateFloatAsState(if (open) 135f else 0f, label = "fr")
+              val corner by animateDpAsState(if (open) 32.dp else 20.dp, label = "fc")
+              Column(modifier, horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  AnimatedVisibility(
+                      open,
+                      enter = fadeIn() + slideInVertically { it / 2 } + scaleIn(),
+                      exit = fadeOut() + slideOutVertically { it / 2 } + scaleOut()
+                  ) {
+                      Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                          items.forEach { f ->
+                              ExtendedFloatingActionButton(
+                                  onClick = { open = false; f.onClick() },
+                                  containerColor = MaterialTheme.colorScheme.primaryContainer,
+                                  contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                              ) { Icon(f.icon, null); Spacer(Modifier.width(8.dp)); Text(f.label) }
+                          }
+                      }
+                  }
+                  FloatingActionButton(
+                      onClick = { open = !open }, shape = RoundedCornerShape(corner), modifier = Modifier.size(64.dp),
+                      containerColor = if (open) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                      contentColor = if (open) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer
+                  ) { Icon(Icons.Filled.Add, null, Modifier.rotate(rot)) }
               }
           }
           EOF
-
-          cat > $J/Repo.kt <<'EOF'
+          cat > $J/Themes.kt <<'EOF'
           package app.tunes
 
+          import android.app.Activity
+          import android.content.Context
           import android.net.Uri
-          import androidx.media3.common.MediaItem
-          import androidx.media3.common.MediaMetadata
-          import org.json.JSONArray
-          import org.json.JSONObject
-          import org.schabi.newpipe.extractor.NewPipe
-          import org.schabi.newpipe.extractor.ServiceList
-          import org.schabi.newpipe.extractor.MediaFormat
-          import org.schabi.newpipe.extractor.search.SearchInfo
-          import org.schabi.newpipe.extractor.stream.StreamInfo
-          import org.schabi.newpipe.extractor.stream.StreamInfoItem
-          import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory as F
+          import android.os.Build
+          import android.widget.Toast
+          import androidx.activity.compose.rememberLauncherForActivityResult
+          import androidx.activity.result.contract.ActivityResultContracts
+          import androidx.compose.foundation.BorderStroke
+          import androidx.compose.foundation.background
+          import androidx.compose.foundation.isSystemInDarkTheme
+          import androidx.compose.foundation.layout.*
+          import androidx.compose.foundation.lazy.LazyColumn
+          import androidx.compose.foundation.shape.CircleShape
+          import androidx.compose.foundation.shape.RoundedCornerShape
+          import androidx.compose.material.icons.Icons
+          import androidx.compose.material.icons.filled.Check
+          import androidx.compose.material3.*
+          import androidx.compose.runtime.*
+          import androidx.compose.ui.Alignment
+          import androidx.compose.ui.Modifier
+          import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.lerp
+          import androidx.compose.ui.graphics.luminance
+          import androidx.compose.ui.platform.LocalContext
+          import androidx.compose.ui.platform.LocalView
+          import androidx.compose.ui.text.font.Font
+          import androidx.compose.ui.text.font.FontFamily
+          import androidx.compose.ui.text.font.FontWeight
+          import androidx.compose.ui.unit.dp
+          import androidx.core.view.WindowCompat
+          import java.io.File
 
-          data class Song(val id: String, val title: String, val artist: String, val art: String?)
+          object Prefs {
+              private lateinit var sp: android.content.SharedPreferences
+              var theme by mutableStateOf("dynamic")
+                  private set
+              var mode by mutableIntStateOf(0)
+                  private set
+              var font by mutableStateOf("sys")
+                  private set
+              var customFont by mutableStateOf<String?>(null)
+                  private set
 
-          fun Song.item(): MediaItem = MediaItem.Builder()
-              .setMediaId(id).setUri(id)
-              .setMediaMetadata(
-                  MediaMetadata.Builder().setTitle(title).setArtist(artist)
-                      .setArtworkUri(art?.let { Uri.parse(it) }).build()
-              ).build()
+              fun init(c: Context) {
+                  sp = c.getSharedPreferences("s", 0)
+                  theme = sp.getString("theme", "dynamic") ?: "dynamic"
+                  mode = sp.getInt("mode", 0)
+                  font = sp.getString("font", "sys") ?: "sys"
+                  customFont = sp.getString("cfont", null)
+              }
+              fun setTheme(v: String) { theme = v; sp.edit().putString("theme", v).apply() }
+              fun setMode(v: Int) { mode = v; sp.edit().putInt("mode", v).apply() }
+              fun setFont(v: String) { font = v; sp.edit().putString("font", v).apply() }
+              fun setCustom(v: String?) { customFont = v; sp.edit().putString("cfont", v).apply() }
+          }
 
-          fun MediaItem.song() = Song(
-              mediaId, mediaMetadata.title?.toString() ?: "", mediaMetadata.artist?.toString() ?: "",
-              mediaMetadata.artworkUri?.toString()
+          private fun c(h: Long) = Color(0xFF000000 or h)
+
+          class Pal(
+              val id: String, val name: String, val dark: Boolean,
+              val bg: Color, val sf: Color, val fg: Color,
+              val p: Color, val s: Color, val t: Color, val e: Color
           )
 
-          object Repo {
-              private var ready = false
-              @Synchronized fun init() { if (!ready) { NewPipe.init(Net()); ready = true } }
+          val palettes = listOf(
+              Pal("ef-dark", "Everforest", true, c(0x2D353B), c(0x343F44), c(0xD3C6AA), c(0xA7C080), c(0x83C092), c(0xDBBC7F), c(0xE67E80)),
+              Pal("ef-light", "Everforest Light", false, c(0xFDF6E3), c(0xF4F0D9), c(0x5C6A72), c(0x8DA101), c(0x35A77C), c(0xDFA000), c(0xF85552)),
+              Pal("mocha", "Catppuccin Mocha", true, c(0x1E1E2E), c(0x313244), c(0xCDD6F4), c(0xCBA6F7), c(0x89B4FA), c(0xA6E3A1), c(0xF38BA8)),
+              Pal("latte", "Catppuccin Latte", false, c(0xEFF1F5), c(0xCCD0DA), c(0x4C4F69), c(0x8839EF), c(0x1E66F5), c(0x40A02B), c(0xD20F39)),
+              Pal("gruvbox", "Gruvbox", true, c(0x282828), c(0x3C3836), c(0xEBDBB2), c(0xFABD2F), c(0xB8BB26), c(0x8EC07C), c(0xFB4934)),
+              Pal("nord", "Nord", true, c(0x2E3440), c(0x3B4252), c(0xECEFF4), c(0x88C0D0), c(0x81A1C1), c(0xA3BE8C), c(0xBF616A)),
+              Pal("rosepine", "Rosé Pine", true, c(0x191724), c(0x1F1D2E), c(0xE0DEF4), c(0xC4A7E7), c(0x9CCFD8), c(0xF6C177), c(0xEB6F92)),
+              Pal("tokyo", "Tokyo Night", true, c(0x1A1B26), c(0x24283B), c(0xC0CAF5), c(0x7AA2F7), c(0xBB9AF7), c(0x9ECE6A), c(0xF7768E)),
+              Pal("amoled", "AMOLED", true, c(0x000000), c(0x121212), c(0xE6E6E6), c(0x8AB4F8), c(0x81C995), c(0xFDD663), c(0xF28B82))
+          )
 
-              private fun StreamInfoItem.toSong() =
-                  Song(url, name, (uploaderName ?: "").removeSuffix(" - Topic"), thumbnails.firstOrNull()?.url)
+          fun Pal.scheme(): ColorScheme {
+              fun m(a: Color, b: Color, f: Float) = lerp(a, b, f)
+              fun on(x: Color) = if (x.luminance() > 0.5f) Color(0xFF111111) else Color.White
+              val base = if (dark) darkColorScheme() else lightColorScheme()
+              return base.copy(
+                  primary = p, onPrimary = on(p), primaryContainer = m(sf, p, 0.35f), onPrimaryContainer = fg,
+                  secondary = s, onSecondary = on(s), secondaryContainer = m(sf, s, 0.35f), onSecondaryContainer = fg,
+                  tertiary = t, onTertiary = on(t), tertiaryContainer = m(sf, t, 0.35f), onTertiaryContainer = fg,
+                  error = e, onError = on(e), errorContainer = m(sf, e, 0.35f), onErrorContainer = fg,
+                  background = bg, onBackground = fg, surface = bg, onSurface = fg,
+                  surfaceVariant = sf, onSurfaceVariant = m(fg, bg, 0.25f),
+                  outline = m(bg, fg, 0.5f), outlineVariant = m(bg, fg, 0.2f), surfaceTint = p,
+                  inverseSurface = fg, inverseOnSurface = bg, inversePrimary = m(p, bg, 0.4f),
+                  surfaceDim = bg, surfaceBright = m(sf, fg, 0.08f),
+                  surfaceContainerLowest = m(bg, Color.Black, 0.2f), surfaceContainerLow = m(bg, sf, 0.5f),
+                  surfaceContainer = sf, surfaceContainerHigh = m(sf, fg, 0.06f), surfaceContainerHighest = m(sf, fg, 0.12f)
+              )
+          }
 
-              fun search(q: String): List<Song> {
-                  init()
-                  val yt = ServiceList.YouTube
-                  val h = yt.searchQHFactory.fromQuery(q, listOf(F.MUSIC_SONGS), "")
-                  return SearchInfo.getInfo(yt, h).relatedItems.filterIsInstance<StreamInfoItem>().map { it.toSong() }
+          val fontOptions = listOf(
+              "sys" to "System default", "gs" to "Google Sans",
+              "gsf" to "Google Sans Flex", "gsc" to "Google Sans Code"
+          )
+
+          fun hasFont(ctx: Context, id: String) =
+              (ctx.assets.list("fonts") ?: emptyArray()).any { it.startsWith("$id-") }
+
+          fun fontFamilyFor(ctx: Context, id: String, custom: String?): FontFamily {
+              if (id == "custom" && custom != null) {
+                  val f = File(ctx.filesDir, custom)
+                  if (f.exists()) return runCatching { FontFamily(Font(f)) }.getOrDefault(FontFamily.Default)
+                  return FontFamily.Default
               }
-
-              fun related(url: String): List<Song> {
-                  init()
-                  return StreamInfo.getInfo(url).relatedItems.filterIsInstance<StreamInfoItem>().map { it.toSong() }
+              if (id == "sys" || id == "custom") return FontFamily.Default
+              val have = (ctx.assets.list("fonts") ?: emptyArray()).toSet()
+              val fs = listOf(400 to FontWeight.Normal, 500 to FontWeight.Medium, 700 to FontWeight.Bold).mapNotNull { (w, fw) ->
+                  "$id-$w.ttf".takeIf { it in have }?.let { Font("fonts/$it", ctx.assets, fw) }
               }
+              return if (fs.isEmpty()) FontFamily.Default else FontFamily(fs)
+          }
 
-              private val urls = HashMap<String, Pair<Long, String>>()
-              fun streamUrl(url: String): String {
-                  synchronized(urls) {
-                      urls[url]?.let { if (System.currentTimeMillis() - it.first < 2 * 3600_000L) return it.second }
-                  }
-                  init()
-                  val a = StreamInfo.getInfo(url).audioStreams
-                  val best = (a.filter { it.format == MediaFormat.M4A }.ifEmpty { a }).maxByOrNull { it.averageBitrate }
-                      ?: error("no audio stream")
-                  val u = best.content
-                  synchronized(urls) { urls[url] = System.currentTimeMillis() to u }
-                  return u
+          fun Typography.withFont(f: FontFamily) = Typography(
+              displayLarge = displayLarge.copy(fontFamily = f), displayMedium = displayMedium.copy(fontFamily = f),
+              displaySmall = displaySmall.copy(fontFamily = f), headlineLarge = headlineLarge.copy(fontFamily = f),
+              headlineMedium = headlineMedium.copy(fontFamily = f), headlineSmall = headlineSmall.copy(fontFamily = f),
+              titleLarge = titleLarge.copy(fontFamily = f), titleMedium = titleMedium.copy(fontFamily = f),
+              titleSmall = titleSmall.copy(fontFamily = f), bodyLarge = bodyLarge.copy(fontFamily = f),
+              bodyMedium = bodyMedium.copy(fontFamily = f), bodySmall = bodySmall.copy(fontFamily = f),
+              labelLarge = labelLarge.copy(fontFamily = f), labelMedium = labelMedium.copy(fontFamily = f),
+              labelSmall = labelSmall.copy(fontFamily = f)
+          )
+
+          @Composable
+          fun Theme(content: @Composable () -> Unit) {
+              val ctx = LocalContext.current
+              val sys = isSystemInDarkTheme()
+              val pal = palettes.firstOrNull { it.id == Prefs.theme }
+              val dark = when (Prefs.mode) { 1 -> false; 2 -> true; else -> sys }
+              val cs = pal?.scheme() ?: if (Build.VERSION.SDK_INT >= 31)
+                  (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx))
+              else (if (dark) darkColorScheme() else lightColorScheme())
+              val isDark = pal?.dark ?: dark
+              val ff = remember(Prefs.font, Prefs.customFont) { fontFamilyFor(ctx, Prefs.font, Prefs.customFont) }
+              val ty = remember(ff) { Typography().withFont(ff) }
+              val view = LocalView.current
+              if (!view.isInEditMode) SideEffect {
+                  val w = (view.context as Activity).window
+                  val ic = WindowCompat.getInsetsController(w, view)
+                  ic.isAppearanceLightStatusBars = !isDark
+                  ic.isAppearanceLightNavigationBars = !isDark
               }
+              MaterialTheme(
+                  colorScheme = cs, typography = ty,
+                  shapes = Shapes(
+                      small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp),
+                      large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(36.dp)
+                  ),
+                  content = content
+              )
+          }
 
-              private fun clean(t: String) = t.replace(Regex("\\s*[\\(\\[][^\\)\\]]*[\\)\\]]"), "").trim()
-
-              fun lyrics(title: String, artist: String): List<Pair<Long, String>> {
-                  val u = "https://lrclib.net/api/search?track_name=${Uri.encode(clean(title))}&artist_name=${Uri.encode(artist)}"
-                  val req = okhttp3.Request.Builder().url(u).header("User-Agent", "Tunes/0.2").build()
-                  val body = Http.c.newCall(req).execute().use { it.body?.string() } ?: return emptyList()
-                  val arr = JSONArray(body)
-                  for (i in 0 until arr.length()) {
-                      val s = arr.getJSONObject(i).optString("syncedLyrics")
-                      if (s.isNotBlank()) return parseLrc(s)
-                  }
-                  return emptyList()
+          fun importFont(ctx: Context, uri: Uri) {
+              val name = "font-${System.currentTimeMillis()}.ttf"
+              val out = File(ctx.filesDir, name)
+              val ok = runCatching {
+                  ctx.contentResolver.openInputStream(uri)!!.use { i -> out.outputStream().use { i.copyTo(it) } }
+                  val h = out.inputStream().use { s -> ByteArray(4).also { s.read(it) } }
+                  val tag = String(h, Charsets.ISO_8859_1)
+                  h.contentEquals(byteArrayOf(0, 1, 0, 0)) || tag == "OTTO" || tag == "true" || tag == "ttcf"
+              }.getOrDefault(false)
+              if (!ok) {
+                  out.delete()
+                  Toast.makeText(ctx, "Not a valid .ttf/.otf file", Toast.LENGTH_SHORT).show()
+                  return
               }
+              Prefs.customFont?.let { File(ctx.filesDir, it).delete() }
+              Prefs.setCustom(name)
+              Prefs.setFont("custom")
+          }
 
-              private val lrc = Regex("""\[(\d+):(\d+)(?:[.:](\d+))?](.*)""")
-              private fun parseLrc(s: String) = s.lines().mapNotNull { l ->
-                  lrc.matchEntire(l.trim())?.let { m ->
-                      val (mm, ss, f, t) = m.destructured
-                      val ms = mm.toLong() * 60000 + ss.toLong() * 1000 + (if (f.isEmpty()) 0 else f.padEnd(3, '0').take(3).toLong())
-                      ms to t.trim().ifEmpty { "♪" }
+          class Opt(val id: String, val name: String, val bg: Color, val fg: Color, val cols: List<Color>)
+
+          @Composable
+          fun ThemeCard(o: Opt, m: Modifier) {
+              val sel = Prefs.theme == o.id
+              Surface(
+                  onClick = { Prefs.setTheme(o.id) }, modifier = m, shape = RoundedCornerShape(24.dp), color = o.bg,
+                  border = BorderStroke(
+                      if (sel) 3.dp else 1.dp,
+                      if (sel) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                  )
+              ) {
+                  Column(Modifier.padding(14.dp)) {
+                      Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                          o.cols.forEach { Box(Modifier.size(22.dp).clip(CircleShape).background(it)) }
+                      }
+                      Spacer(Modifier.height(10.dp))
+                      Row(verticalAlignment = Alignment.CenterVertically) {
+                          Text(o.name, Modifier.weight(1f), color = o.fg, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                          if (sel) Icon(Icons.Filled.Check, null, Modifier.size(18.dp), tint = o.fg)
+                      }
                   }
               }
           }
 
-          object Store {
-              private lateinit var sp: android.content.SharedPreferences
-              fun init(c: android.content.Context) { sp = c.getSharedPreferences("s", 0) }
-              fun load(k: String): List<Song> = runCatching {
-                  val a = JSONArray(sp.getString(k, "[]"))
-                  (0 until a.length()).map {
-                      val o = a.getJSONObject(it)
-                      Song(o.getString("id"), o.getString("t"), o.getString("a"), o.optString("r").ifEmpty { null })
-                  }
-              }.getOrDefault(emptyList())
-              fun save(k: String, l: List<Song>) {
-                  val a = JSONArray()
-                  l.forEach { a.put(JSONObject().put("id", it.id).put("t", it.title).put("a", it.artist).put("r", it.art ?: "")) }
-                  sp.edit().putString(k, a.toString()).apply()
+          @OptIn(ExperimentalMaterial3Api::class)
+          @Composable
+          fun SettingsScreen() {
+              val ctx = LocalContext.current
+              val sysDark = isSystemInDarkTheme()
+              val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { u: Uri? ->
+                  u?.let { importFont(ctx, it) }
               }
-          }
-          EOF
+              val opts = buildList {
+                  if (Build.VERSION.SDK_INT >= 31) {
+                      val d = if (sysDark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+                      add(Opt("dynamic", "Material You", d.surface, d.onSurface, listOf(d.primary, d.secondary, d.tertiary)))
+                  }
+                  palettes.forEach { add(Opt(it.id, it.name, it.bg, it.fg, listOf(it.p, it.s, it.t))) }
+              }
+              val fonts = fontOptions.filter { it.first == "sys" || hasFont(ctx, it.first) } +
+                  (if (Prefs.customFont != null) listOf("custom" to "Imported font") else emptyList())
 
-          cat > $J/PlayerService.kt <<'EOF'
-          package app.tunes
-
-          import android.content.Context
-          import android.content.Intent
-          import android.net.Uri
-          import androidx.media3.common.AudioAttributes
-          import androidx.media3.common.C
-          import androidx.media3.database.StandaloneDatabaseProvider
-          import androidx.media3.datasource.DefaultHttpDataSource
-          import androidx.media3.datasource.ResolvingDataSource
-          import androidx.media3.datasource.cache.CacheDataSource
-          import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
-          import androidx.media3.datasource.cache.SimpleCache
-          import androidx.media3.exoplayer.ExoPlayer
-          import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
-          import androidx.media3.session.MediaSession
-          import androidx.media3.session.MediaSessionService
-          import java.io.File
-          import java.io.IOException
-
-          object MediaCache {
-              private var c: SimpleCache? = null
-              @Synchronized fun get(ctx: Context): SimpleCache = c ?: SimpleCache(
-                  File(ctx.cacheDir, "media"), LeastRecentlyUsedCacheEvictor(512L * 1024 * 1024),
-                  StandaloneDatabaseProvider(ctx)
-              ).also { c = it }
-          }
-
-          class PlayerService : MediaSessionService() {
-              private var session: MediaSession? = null
-
-              override fun onCreate() {
-                  super.onCreate()
-                  val http = DefaultHttpDataSource.Factory().setUserAgent(UA).setAllowCrossProtocolRedirects(true)
-                  val resolving = ResolvingDataSource.Factory(http, ResolvingDataSource.Resolver { spec ->
-                      val u = spec.uri.toString()
-                      try {
-                          if (u.contains("youtube.com/watch")) spec.withUri(Uri.parse(Repo.streamUrl(u))) else spec
-                      } catch (e: Exception) { throw IOException(e) }
-                  })
-                  val cached = CacheDataSource.Factory().setCache(MediaCache.get(this))
-                      .setUpstreamDataSourceFactory(resolving)
-                      .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
-                  val player = ExoPlayer.Builder(this)
-                      .setMediaSourceFactory(DefaultMediaSourceFactory(cached))
-                      .setAudioAttributes(
-                          AudioAttributes.Builder().setUsage(C.USAGE_MEDIA)
-                              .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC).build(), true
+              LazyColumn(
+                  Modifier.statusBarsPadding(), contentPadding = PaddingValues(16.dp),
+                  verticalArrangement = Arrangement.spacedBy(12.dp)
+              ) {
+                  item { Text("Settings", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold) }
+                  item { Text("Theme", style = MaterialTheme.typography.titleLarge) }
+                  opts.chunked(2).forEach { row ->
+                      item {
+                          Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                              row.forEach { ThemeCard(it, Modifier.weight(1f)) }
+                              if (row.size == 1) Spacer(Modifier.weight(1f))
+                          }
+                      }
+                  }
+                  if (Prefs.theme == "dynamic") item {
+                      ButtonGroupRow(listOf("System", "Light", "Dark"), Prefs.mode, { Prefs.setMode(it) }, Modifier.fillMaxWidth())
+                  }
+                  item { Text("Font", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleLarge) }
+                  fonts.forEach { (id, name) ->
+                      item {
+                          val sel = Prefs.font == id
+                          val ff = remember(id, Prefs.customFont) { fontFamilyFor(ctx, id, Prefs.customFont) }
+                          Surface(
+                              onClick = { Prefs.setFont(id) }, shape = RoundedCornerShape(20.dp),
+                              color = if (sel) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh,
+                              modifier = Modifier.fillMaxWidth()
+                          ) {
+                              Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                  Column(Modifier.weight(1f)) {
+                                      Text(name, style = MaterialTheme.typography.labelLarge)
+                                      Text("Aa The quick brown fox", style = MaterialTheme.typography.headlineSmall.copy(fontFamily = ff))
+                                  }
+                                  RadioButton(sel, null)
+                              }
+                          }
+                      }
+                  }
+                  if (!hasFont(ctx, "gs") && !hasFont(ctx, "gsf")) item {
+                      Text(
+                          "Google Sans files weren't downloaded at build time. Re-run the workflow, or import a font file below.",
+                          style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                       )
-                      .setHandleAudioBecomingNoisy(true)
-                      .build()
-                  session = MediaSession.Builder(this, player).build()
-              }
-
-              override fun onGetSession(c: MediaSession.ControllerInfo) = session
-
-              override fun onTaskRemoved(i: Intent?) {
-                  val p = session?.player
-                  if (p == null || !p.playWhenReady || p.mediaItemCount == 0) stopSelf()
-              }
-
-              override fun onDestroy() {
-                  session?.run { player.release(); release() }
-                  session = null
-                  super.onDestroy()
+                  }
+                  item {
+                      FilledTonalButton({ picker.launch(arrayOf("*/*")) }) { Text("Import font file (.ttf / .otf)") }
+                  }
               }
           }
           EOF
-
-          cat > $J/Vm.kt <<'EOF'
-          package app.tunes
-
-          import android.app.Application
-          import android.content.ComponentName
-          import androidx.compose.runtime.*
-          import androidx.core.content.ContextCompat
-          import androidx.lifecycle.AndroidViewModel
-          import androidx.lifecycle.viewModelScope
-          import androidx.media3.common.MediaItem
-          import androidx.media3.common.PlaybackException
-          import androidx.media3.common.Player
-          import androidx.media3.common.Timeline
-          import androidx.media3.session.MediaController
-          import androidx.media3.session.SessionToken
-          import kotlinx.coroutines.Dispatchers
-          import kotlinx.coroutines.launch
-          import kotlinx.coroutines.withContext
-
-          class Vm(app: Application) : AndroidViewModel(app) {
-              var tab by mutableIntStateOf(0)
-              var q by mutableStateOf("")
-              var results by mutableStateOf<List<Song>>(emptyList())
-              var loading by mutableStateOf(false)
-              var err by mutableStateOf<String?>(null)
-              var liked by mutableStateOf<List<Song>>(emptyList())
-              var history by mutableStateOf<List<Song>>(emptyList())
-              var suggestions by mutableStateOf<List<Song>>(emptyList())
-              var queue by mutableStateOf<List<MediaItem>>(emptyList())
-              var cur by mutableStateOf<MediaItem?>(null)
-              var playing by mutableStateOf(false)
-              var pos by mutableLongStateOf(0L)
-              var dur by mutableLongStateOf(0L)
-              var shuffle by mutableStateOf(false)
-              var repeat by mutableIntStateOf(0)
-              var lyrics by mutableStateOf<List<Pair<Long, String>>>(emptyList())
-              private var mc: MediaController? = null
-
-              private val l = object : Player.Listener {
-                  override fun onIsPlayingChanged(p: Boolean) { playing = p }
-                  override fun onMediaItemTransition(i: MediaItem?, r: Int) { sync(); i?.let { track(it) } }
-                  override fun onTimelineChanged(t: Timeline, r: Int) { sync() }
-                  override fun onShuffleModeEnabledChanged(b: Boolean) { shuffle = b }
-                  override fun onRepeatModeChanged(m: Int) { repeat = m }
-                  override fun onPlayerError(e: PlaybackException) {
-                      err = e.errorCodeName + (e.cause?.message?.let { ": $it" } ?: "")
-                  }
-              }
-
-              init {
-                  Store.init(app)
-                  liked = Store.load("liked")
-                  history = Store.load("hist")
-                  val t = SessionToken(app, ComponentName(app, PlayerService::class.java))
-                  val f = MediaController.Builder(app, t).buildAsync()
-                  f.addListener({
-                      runCatching { f.get() }.onSuccess { c ->
-                          mc = c; c.addListener(l); playing = c.isPlaying
-                          shuffle = c.shuffleModeEnabled; repeat = c.repeatMode; sync()
-                          if (c.currentMediaItem != null) loadLyrics(c.currentMediaItem!!)
-                      }
-                  }, ContextCompat.getMainExecutor(app))
-                  viewModelScope.launch {
-                      val r = withContext(Dispatchers.IO) {
-                          runCatching {
-                              val h = history.firstOrNull()
-                              if (h != null) Repo.related(h.id) else Repo.search("top hits")
-                          }.getOrDefault(emptyList())
-                      }
-                      suggestions = r
-                  }
-              }
-
-              private fun sync() {
-                  val c = mc ?: return
-                  cur = c.currentMediaItem
-                  queue = (0 until c.mediaItemCount).map { c.getMediaItemAt(it) }
-              }
-
-              fun tick() { mc?.let { pos = it.currentPosition; dur = it.duration.coerceAtLeast(0L) } }
-
-              private fun track(i: MediaItem) {
-                  val s = i.song()
-                  history = (listOf(s) + history.filter { it.id != s.id }).take(50)
-                  Store.save("hist", history)
-                  loadLyrics(i)
-                  extend()
-              }
-
-              private fun loadLyrics(i: MediaItem) {
-                  lyrics = emptyList()
-                  viewModelScope.launch {
-                      val r = withContext(Dispatchers.IO) {
-                          runCatching { Repo.lyrics(i.mediaMetadata.title.toString(), i.mediaMetadata.artist.toString()) }
-                              .getOrDefault(emptyList())
-                      }
-                      if (cur?.mediaId == i.mediaId) lyrics = r
-                  }
-              }
-
-              private fun extend() {
-                  val c = mc ?: return
-                  if (c.currentMediaItemIndex < c.mediaItemCount - 2) return
-                  val id = c.currentMediaItem?.mediaId ?: return
-                  viewModelScope.launch {
-                      val r = withContext(Dispatchers.IO) { runCatching { Repo.related(id) }.getOrDefault(emptyList()) }
-                      val have = queue.map { it.mediaId }.toSet()
-                      val add = r.filter { it.id !in have }.take(15).map { it.item() }
-                      if (add.isNotEmpty()) c.addMediaItems(add)
-                  }
-              }
-
-              fun search() {
-                  if (q.isBlank()) return
-                  viewModelScope.launch {
-                      loading = true; err = null
-                      runCatching { withContext(Dispatchers.IO) { Repo.search(q) } }
-                          .onSuccess { results = it }.onFailure { err = it.message ?: "search failed" }
-                      loading = false
-                  }
-              }
-
-              fun play(list: List<Song>, i: Int) {
-                  val c = mc ?: return
-                  err = null
-                  c.setMediaItems(list.map { it.item() }, i, 0L)
-                  c.prepare(); c.play()
-              }
-
-              fun playNext(s: Song) {
-                  val c = mc ?: return
-                  if (c.mediaItemCount == 0) play(listOf(s), 0) else c.addMediaItem(c.currentMediaItemIndex + 1, s.item())
-              }
-
-              fun addQueue(s: Song) {
-                  val c = mc ?: return
-                  if (c.mediaItemCount == 0) play(listOf(s), 0) else c.addMediaItem(s.item())
-              }
-
-              fun isLiked(s: Song) = liked.any { it.id == s.id }
-              fun toggleLike(s: Song) {
-                  liked = if (isLiked(s)) liked.filter { it.id != s.id } else listOf(s) + liked
-                  Store.save("liked", liked)
-              }
-
-              fun toggle() { mc?.let { if (it.isPlaying) it.pause() else it.play() } }
-              fun next() { mc?.seekToNextMediaItem() }
-              fun prev() { mc?.let { if (it.currentPosition > 3000) it.seekTo(0) else it.seekToPreviousMediaItem() } }
-              fun seek(ms: Long) { mc?.seekTo(ms) }
-              fun jump(i: Int) { mc?.seekTo(i, 0L) }
-              fun toggleShuffle() { mc?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled } }
-              fun cycleRepeat() { mc?.let { it.repeatMode = when (it.repeatMode) { 0 -> 2; 2 -> 1; else -> 0 } } }
-
-              override fun onCleared() { mc?.removeListener(l); mc?.release() }
-          }
-          EOF
-
           cat > $J/MainActivity.kt <<'EOF'
           package app.tunes
 
@@ -487,17 +509,21 @@ jobs:
           import androidx.activity.enableEdgeToEdge
           import androidx.activity.result.contract.ActivityResultContracts
           import androidx.compose.animation.AnimatedVisibility
+          import androidx.compose.animation.animateColorAsState
           import androidx.compose.animation.core.animateDpAsState
+          import androidx.compose.animation.core.animateFloatAsState
           import androidx.compose.animation.slideInVertically
           import androidx.compose.animation.slideOutVertically
+          import androidx.compose.foundation.background
           import androidx.compose.foundation.clickable
+          import androidx.compose.foundation.gestures.snapping.rememberSnapFlingBehavior
           import androidx.compose.foundation.isSystemInDarkTheme
           import androidx.compose.foundation.layout.*
           import androidx.compose.foundation.lazy.LazyColumn
           import androidx.compose.foundation.lazy.LazyRow
+          import androidx.compose.foundation.lazy.items
           import androidx.compose.foundation.lazy.itemsIndexed
           import androidx.compose.foundation.lazy.rememberLazyListState
-          import androidx.compose.foundation.shape.CircleShape
           import androidx.compose.foundation.shape.RoundedCornerShape
           import androidx.compose.foundation.text.KeyboardActions
           import androidx.compose.foundation.text.KeyboardOptions
@@ -509,41 +535,45 @@ jobs:
           import androidx.compose.ui.Alignment
           import androidx.compose.ui.Modifier
           import androidx.compose.ui.draw.clip
+          import androidx.compose.ui.graphics.Brush
+          import androidx.compose.ui.graphics.Color
+          import androidx.compose.ui.graphics.compositeOver
+          import androidx.compose.ui.graphics.graphicsLayer
+          import androidx.compose.ui.graphics.toArgb
           import androidx.compose.ui.layout.ContentScale
+          import androidx.compose.ui.platform.LocalConfiguration
           import androidx.compose.ui.platform.LocalContext
           import androidx.compose.ui.text.font.FontWeight
           import androidx.compose.ui.text.input.ImeAction
           import androidx.compose.ui.text.style.TextOverflow
           import androidx.compose.ui.unit.Dp
           import androidx.compose.ui.unit.dp
+          import androidx.core.graphics.drawable.toBitmap
           import androidx.lifecycle.viewmodel.compose.viewModel
+          import androidx.palette.graphics.Palette
           import coil.compose.AsyncImage
+          import coil.imageLoader
+          import coil.request.ImageRequest
+          import coil.request.SuccessResult
+          import kotlinx.coroutines.Dispatchers
           import kotlinx.coroutines.delay
+          import kotlinx.coroutines.withContext
 
           class MainActivity : ComponentActivity() {
               override fun onCreate(s: Bundle?) {
                   super.onCreate(s)
                   enableEdgeToEdge()
+                  Prefs.init(this)
                   setContent { Theme { Root(viewModel()) } }
               }
           }
 
-          @Composable
-          fun Theme(c: @Composable () -> Unit) {
-              val ctx = LocalContext.current
-              val dark = isSystemInDarkTheme()
-              val cs = if (Build.VERSION.SDK_INT >= 31)
-                  (if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx))
-              else (if (dark) darkColorScheme() else lightColorScheme())
-              MaterialTheme(
-                  colorScheme = cs,
-                  shapes = Shapes(
-                      small = RoundedCornerShape(12.dp), medium = RoundedCornerShape(20.dp),
-                      large = RoundedCornerShape(28.dp), extraLarge = RoundedCornerShape(36.dp)
-                  ),
-                  content = c
-              )
-          }
+          val moods = listOf(
+              "Energize" to "high energy songs", "Relax" to "relaxing chill songs",
+              "Focus" to "focus lofi study music", "Party" to "party hits songs",
+              "Feel good" to "feel good songs", "Workout" to "gym workout songs",
+              "Romance" to "romantic love songs", "Sad" to "sad emotional songs"
+          )
 
           fun fmt(ms: Long) = String.format("%d:%02d", ms / 60000, ms / 1000 % 60)
 
@@ -554,14 +584,38 @@ jobs:
           )
 
           @Composable
+          fun rememberArtColor(url: String?, fallback: Color): Color {
+              val ctx = LocalContext.current
+              var c by remember(url) { mutableStateOf(fallback) }
+              LaunchedEffect(url) {
+                  if (url == null) return@LaunchedEffect
+                  runCatching {
+                      val r = ctx.imageLoader.execute(ImageRequest.Builder(ctx).data(url).allowHardware(false).size(128).build())
+                      val bmp = (r as? SuccessResult)?.drawable?.toBitmap() ?: return@runCatching
+                      val argb = withContext(Dispatchers.Default) {
+                          val p = Palette.from(bmp).generate()
+                          p.getVibrantColor(p.getDominantColor(fallback.toArgb()))
+                      }
+                      c = Color(argb)
+                  }
+              }
+              return animateColorAsState(c, label = "art").value
+          }
+
+          @Composable
           fun Root(vm: Vm) {
               var full by remember { mutableStateOf(false) }
+              val wide = LocalConfiguration.current.screenWidthDp >= 600
               val perm = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) {}
               LaunchedEffect(Unit) {
                   if (Build.VERSION.SDK_INT >= 33) perm.launch(Manifest.permission.POST_NOTIFICATIONS)
                   while (true) { vm.tick(); delay(500) }
               }
               BackHandler(full) { full = false }
+              val nav = listOf(
+                  Triple("Home", Icons.Filled.Home, 0), Triple("Search", Icons.Filled.Search, 1),
+                  Triple("Library", Icons.Filled.LibraryMusic, 2), Triple("Settings", Icons.Filled.Settings, 3)
+              )
               Box(Modifier.fillMaxSize()) {
                   Scaffold(
                       bottomBar = {
@@ -573,17 +627,39 @@ jobs:
                                   }
                               }
                               if (vm.cur != null) Mini(vm) { full = true }
-                              NavigationBar {
-                                  listOf("Home" to Icons.Filled.Home, "Search" to Icons.Filled.Search,
-                                      "Library" to Icons.Filled.LibraryMusic).forEachIndexed { i, (n, ic) ->
+                              if (!wide) NavigationBar {
+                                  nav.forEach { (n, ic, i) ->
                                       NavigationBarItem(vm.tab == i, { vm.tab = i }, { Icon(ic, n) }, label = { Text(n) })
                                   }
                               }
                           }
                       }
                   ) { pad ->
-                      Box(Modifier.padding(pad).fillMaxSize()) {
-                          when (vm.tab) { 0 -> Home(vm); 1 -> SearchTab(vm); else -> Library(vm) }
+                      Row(Modifier.padding(pad).fillMaxSize()) {
+                          if (wide) NavigationRail(
+                              header = {
+                                  ExtendedFloatingActionButton(onClick = { vm.tab = 1 }) {
+                                      Icon(Icons.Filled.Search, null); Spacer(Modifier.width(8.dp)); Text("Search")
+                                  }
+                              }
+                          ) {
+                              Spacer(Modifier.height(16.dp))
+                              nav.forEach { (n, ic, i) ->
+                                  NavigationRailItem(vm.tab == i, { vm.tab = i }, { Icon(ic, n) }, label = { Text(n) }, alwaysShowLabel = true)
+                              }
+                          }
+                          Box(Modifier.weight(1f).fillMaxHeight()) {
+                              when (vm.tab) { 0 -> Home(vm); 1 -> SearchTab(vm); 2 -> Library(vm); else -> SettingsScreen() }
+                              if (vm.tab == 0 || vm.tab == 2) FabMenu(
+                                  listOf(
+                                      FabItem("Shuffle liked", Icons.Filled.Shuffle) { if (vm.liked.isNotEmpty()) vm.play(vm.liked.shuffled(), 0) },
+                                      FabItem("Play history", Icons.Filled.History) { if (vm.history.isNotEmpty()) vm.play(vm.history, 0) },
+                                      FabItem("Search", Icons.Filled.Search) { vm.tab = 1 },
+                                      FabItem("Settings", Icons.Filled.Settings) { vm.tab = 3 }
+                                  ),
+                                  Modifier.align(Alignment.BottomEnd).padding(16.dp)
+                              )
+                          }
                       }
                   }
                   AnimatedVisibility(full, enter = slideInVertically { it }, exit = slideOutVertically { it }) {
@@ -595,24 +671,26 @@ jobs:
           @Composable
           fun Mini(vm: Vm, open: () -> Unit) {
               val s = vm.cur?.song() ?: return
+              val frac = if (vm.dur > 0) (vm.pos.toFloat() / vm.dur).coerceIn(0f, 1f) else 0f
               Surface(
                   onClick = open, color = MaterialTheme.colorScheme.secondaryContainer,
-                  shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp), modifier = Modifier.fillMaxWidth()
+                  shape = RoundedCornerShape(32.dp), tonalElevation = 3.dp, shadowElevation = 6.dp,
+                  modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp).fillMaxWidth()
               ) {
-                  Column {
-                      Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                          Art(s.art, 48.dp)
-                          Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                              Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                              Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
-                          }
-                          IconButton(vm::toggle) { Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null) }
-                          IconButton(vm::next) { Icon(Icons.Filled.SkipNext, null) }
+                  Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Art(s.art, 48.dp, 20.dp)
+                      Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
+                          Text(s.title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleSmall)
+                          Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
                       }
-                      LinearProgressIndicator(
-                          progress = { if (vm.dur > 0) (vm.pos.toFloat() / vm.dur).coerceIn(0f, 1f) else 0f },
-                          modifier = Modifier.fillMaxWidth()
-                      )
+                      Box(contentAlignment = Alignment.Center) {
+                          CircularProgressIndicator(
+                              progress = { frac }, modifier = Modifier.size(44.dp), strokeWidth = 3.dp,
+                              trackColor = Color.Transparent
+                          )
+                          IconButton(vm::toggle) { Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null) }
+                      }
+                      IconButton(vm::next) { Icon(Icons.Filled.SkipNext, null) }
                   }
               }
           }
@@ -640,28 +718,116 @@ jobs:
           }
 
           @Composable
+          fun Sec(t: String, m: Modifier = Modifier) =
+              Text(t, m.padding(horizontal = 16.dp), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+
+          @Composable
+          fun Tile(vm: Vm, list: List<Song>, i: Int, m: Modifier) {
+              val s = list[i]
+              Surface(
+                  onClick = { vm.play(list, i) }, shape = RoundedCornerShape(20.dp),
+                  color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = m
+              ) {
+                  Row(Modifier.height(60.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Art(s.art, 60.dp, 0.dp)
+                      Text(s.title, Modifier.padding(horizontal = 12.dp), maxLines = 2, overflow = TextOverflow.Ellipsis,
+                          style = MaterialTheme.typography.labelLarge)
+                  }
+              }
+          }
+
+          @Composable
           fun Home(vm: Vm) {
-              LazyColumn(Modifier.statusBarsPadding(), contentPadding = PaddingValues(16.dp)) {
-                  item { Text("Tunes", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold) }
-                  if (vm.history.isNotEmpty()) {
-                      item { Text("Recently played", Modifier.padding(top = 20.dp, bottom = 8.dp), style = MaterialTheme.typography.titleLarge) }
+              val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
+              val greet = when { hour < 5 -> "Late night vibes"; hour < 12 -> "Good morning"; hour < 17 -> "Good afternoon"
+                  hour < 22 -> "Good evening"; else -> "Late night vibes" }
+              val feed = if (vm.mood != null) vm.moodList else vm.suggestions
+              val jump = vm.history.ifEmpty { feed }.take(6)
+              val fresh = feed.drop(1).take(12)
+              val rest = feed.drop(13)
+
+              LazyColumn(Modifier.statusBarsPadding(), contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                  item {
+                      Row(Modifier.padding(start = 16.dp, end = 8.dp, top = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                          Column(Modifier.weight(1f)) {
+                              Text(greet, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                              Text("What are we playing?", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                          }
+                          FilledTonalIconButton({ vm.tab = 1 }) { Icon(Icons.Filled.Search, null) }
+                          FilledTonalIconButton({ vm.tab = 3 }) { Icon(Icons.Filled.Settings, null) }
+                      }
+                  }
+                  item {
+                      LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          items(moods) { (n, q) ->
+                              FilterChip(
+                                  selected = vm.mood == n, onClick = { vm.pickMood(n, q) }, label = { Text(n) },
+                                  leadingIcon = if (vm.mood == n) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null
+                              )
+                          }
+                      }
+                  }
+                  if (vm.moodLoading || feed.isEmpty()) item {
+                      Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingBlob(Modifier.size(64.dp), contained = true) }
+                  }
+                  feed.firstOrNull()?.let { h ->
                       item {
-                          val h = vm.history.take(15)
-                          LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                              itemsIndexed(h) { i, s ->
-                                  Column(Modifier.width(140.dp).clip(RoundedCornerShape(20.dp)).clickable { vm.play(h, i) }) {
-                                      Art(s.art, 140.dp, 24.dp)
-                                      Text(s.title, Modifier.padding(top = 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
-                                          style = MaterialTheme.typography.labelLarge)
-                                      Text(s.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                          Box(
+                              Modifier.padding(horizontal = 16.dp).fillMaxWidth().height(230.dp)
+                                  .clip(RoundedCornerShape(36.dp)).clickable { vm.play(feed, 0) }
+                          ) {
+                              AsyncImage(h.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                              Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))))
+                              Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
+                                  Text(if (vm.mood != null) "${vm.mood} pick" else "Featured", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.75f))
+                                  Text(h.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.headlineSmall,
+                                      fontWeight = FontWeight.Bold, color = Color.White)
+                                  Text(h.artist, maxLines = 1, color = Color.White.copy(alpha = 0.85f))
+                                  Row(Modifier.padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                      Button({ vm.play(feed, 0) }) { Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Play") }
+                                      FilledTonalButton({ vm.play(feed.shuffled(), 0) }) { Icon(Icons.Filled.Shuffle, null); Spacer(Modifier.width(6.dp)); Text("Shuffle") }
                                   }
                               }
                           }
                       }
                   }
-                  item { Text(if (vm.history.isEmpty()) "Top hits" else "Recommended", Modifier.padding(top = 20.dp, bottom = 4.dp),
-                      style = MaterialTheme.typography.titleLarge) }
-                  itemsIndexed(vm.suggestions) { i, _ -> SongRow(vm, vm.suggestions, i) }
+                  if (jump.isNotEmpty()) {
+                      item { Sec(if (vm.history.isEmpty()) "Quick picks" else "Jump back in", Modifier.padding(top = 12.dp)) }
+                      item {
+                          Column(Modifier.padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                              jump.chunked(2).forEachIndexed { r, ch ->
+                                  Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                      ch.forEachIndexed { c, _ -> Tile(vm, jump, r * 2 + c, Modifier.weight(1f)) }
+                                      if (ch.size == 1) Spacer(Modifier.weight(1f))
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  if (fresh.isNotEmpty()) {
+                      item { Sec("Fresh for you", Modifier.padding(top = 12.dp)) }
+                      item {
+                          val st = rememberLazyListState()
+                          LazyRow(
+                              state = st, flingBehavior = rememberSnapFlingBehavior(st),
+                              contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)
+                          ) {
+                              itemsIndexed(fresh) { i, s ->
+                                  Column(Modifier.width(156.dp).clip(RoundedCornerShape(24.dp)).clickable { vm.play(feed, i + 1) }) {
+                                      Art(s.art, 156.dp, 24.dp)
+                                      Text(s.title, Modifier.padding(top = 8.dp, start = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          style = MaterialTheme.typography.labelLarge)
+                                      Text(s.artist, Modifier.padding(start = 4.dp), maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                          style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                  }
+                              }
+                          }
+                      }
+                  }
+                  if (rest.isNotEmpty()) {
+                      item { Sec("More like this", Modifier.padding(top = 12.dp)) }
+                      itemsIndexed(rest) { i, _ -> Box(Modifier.padding(horizontal = 8.dp)) { SongRow(vm, rest, i) } }
+                  }
               }
           }
 
@@ -676,7 +842,15 @@ jobs:
                       keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                       keyboardActions = KeyboardActions(onSearch = { vm.search() })
                   )
-                  if (vm.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                  if (vm.loading) WavyLine(null, Modifier.fillMaxWidth().padding(vertical = 8.dp))
+                  if (vm.results.isEmpty() && !vm.loading) {
+                      Text("Try", Modifier.padding(top = 8.dp, bottom = 4.dp), style = MaterialTheme.typography.titleMedium)
+                      LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                          items(listOf("Lo-fi beats", "Synthwave", "90s hits", "Acoustic covers", "Arijit Singh", "Jazz classics")) {
+                              AssistChip({ vm.q = it; vm.search() }, { Text(it) })
+                          }
+                      }
+                  }
                   LazyColumn { itemsIndexed(vm.results) { i, _ -> SongRow(vm, vm.results, i) } }
               }
           }
@@ -686,12 +860,10 @@ jobs:
               var t by remember { mutableIntStateOf(0) }
               val list = if (t == 0) vm.liked else vm.history
               Column(Modifier.statusBarsPadding()) {
-                  TabRow(t) {
-                      Tab(t == 0, { t = 0 }, text = { Text("Liked") })
-                      Tab(t == 1, { t = 1 }, text = { Text("History") })
-                  }
+                  ButtonGroupRow(listOf("Liked", "History"), t, { t = it }, Modifier.fillMaxWidth().padding(16.dp),
+                      listOf(Icons.Filled.Favorite, Icons.Filled.History))
                   if (list.isEmpty()) Text("Nothing here yet", Modifier.padding(24.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                  LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp)) {
+                  LazyColumn(contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = 96.dp)) {
                       itemsIndexed(list) { i, _ -> SongRow(vm, list, i) }
                   }
               }
@@ -705,23 +877,22 @@ jobs:
               var showQ by remember { mutableStateOf(false) }
               var drag by remember { mutableStateOf<Float?>(null) }
               val frac = if (vm.dur > 0) (vm.pos.toFloat() / vm.dur).coerceIn(0f, 1f) else 0f
-              val corner by animateDpAsState(if (vm.playing) 24.dp else 40.dp, label = "pc")
+              val corner by animateDpAsState(if (vm.playing) 24.dp else 44.dp, label = "pc")
+              val sc by animateFloatAsState(if (vm.playing) 1f else 0.88f, label = "sc")
+              val surf = MaterialTheme.colorScheme.surface
+              val tint = rememberArtColor(s.art, MaterialTheme.colorScheme.primary)
 
-              Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface) {
+              Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.35f).compositeOver(surf), surf)))) {
                   Column(Modifier.systemBarsPadding().padding(horizontal = 24.dp, vertical = 8.dp)) {
-                      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                      Row(Modifier.fillMaxWidth()) {
                           IconButton(close) { Icon(Icons.Filled.KeyboardArrowDown, null) }
-                          Row {
-                              IconButton({ lyr = !lyr }) {
-                                  Icon(Icons.Filled.Lyrics, null, tint = if (lyr) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface)
-                              }
-                              IconButton({ showQ = true }) { Icon(Icons.AutoMirrored.Filled.QueueMusic, null) }
-                          }
                       }
                       Box(Modifier.weight(1f).fillMaxWidth().padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                           if (lyr) Lyrics(vm) else AsyncImage(
                               model = s.art, contentDescription = null, contentScale = ContentScale.Crop,
-                              modifier = Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(36.dp))
+                              modifier = Modifier.fillMaxWidth().aspectRatio(1f)
+                                  .graphicsLayer { scaleX = sc; scaleY = sc }
+                                  .clip(RoundedCornerShape(36.dp))
                           )
                       }
                       Row(verticalAlignment = Alignment.CenterVertically) {
@@ -735,28 +906,37 @@ jobs:
                               Icon(if (vm.isLiked(s)) Icons.Filled.Favorite else Icons.Filled.FavoriteBorder, null)
                           }
                       }
-                      Slider(
-                          value = drag ?: frac, onValueChange = { drag = it },
-                          onValueChangeFinished = { drag?.let { vm.seek((it * vm.dur).toLong()) }; drag = null }
+                      WavySlider(
+                          value = drag ?: frac, onChange = { drag = it },
+                          onDone = { drag?.let { vm.seek((it * vm.dur).toLong()) }; drag = null },
+                          modifier = Modifier.fillMaxWidth(), playing = vm.playing
                       )
                       Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                           Text(fmt(vm.pos), style = MaterialTheme.typography.labelMedium)
                           Text(fmt(vm.dur), style = MaterialTheme.typography.labelMedium)
                       }
                       Row(
-                          Modifier.fillMaxWidth().padding(vertical = 16.dp),
-                          horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically
+                          Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                          horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically
                       ) {
-                          FilledTonalIconToggleButton(vm.shuffle, { vm.toggleShuffle() }) { Icon(Icons.Filled.Shuffle, null) }
-                          IconButton(vm::prev, Modifier.size(56.dp)) { Icon(Icons.Filled.SkipPrevious, null, Modifier.size(36.dp)) }
-                          FilledIconButton(vm::toggle, Modifier.size(84.dp), shape = RoundedCornerShape(corner)) {
-                              Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, Modifier.size(44.dp))
+                          IconButton(vm::prev, Modifier.size(64.dp)) { Icon(Icons.Filled.SkipPrevious, null, Modifier.size(40.dp)) }
+                          Spacer(Modifier.width(12.dp))
+                          FilledIconButton(vm::toggle, Modifier.size(88.dp), shape = RoundedCornerShape(corner)) {
+                              Icon(if (vm.playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, null, Modifier.size(46.dp))
                           }
-                          IconButton(vm::next, Modifier.size(56.dp)) { Icon(Icons.Filled.SkipNext, null, Modifier.size(36.dp)) }
-                          FilledTonalIconToggleButton(vm.repeat != 0, { vm.cycleRepeat() }) {
-                              Icon(if (vm.repeat == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, null)
-                          }
+                          Spacer(Modifier.width(12.dp))
+                          IconButton(vm::next, Modifier.size(64.dp)) { Icon(Icons.Filled.SkipNext, null, Modifier.size(40.dp)) }
                       }
+                      FloatingToolbar(
+                          listOf(
+                              TbItem(Icons.Filled.Shuffle, "Shuffle", vm.shuffle) { vm.toggleShuffle() },
+                              TbItem(if (vm.repeat == 1) Icons.Filled.RepeatOne else Icons.Filled.Repeat, "Repeat", vm.repeat != 0) { vm.cycleRepeat() },
+                              TbItem(Icons.Filled.Lyrics, "Lyrics", lyr) { lyr = !lyr },
+                              TbItem(Icons.AutoMirrored.Filled.QueueMusic, "Queue", false) { showQ = true }
+                          ),
+                          Modifier.align(Alignment.CenterHorizontally)
+                      )
+                      Spacer(Modifier.height(8.dp))
                   }
               }
 
@@ -770,7 +950,7 @@ jobs:
                               supportingContent = { Text(q.artist, maxLines = 1) },
                               leadingContent = { Art(q.art, 48.dp) },
                               colors = ListItemDefaults.colors(
-                                  containerColor = if (i == idx) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
+                                  containerColor = if (i == idx) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
                               ),
                               modifier = Modifier.clip(RoundedCornerShape(20.dp)).clickable { vm.jump(i) }
                           )
@@ -800,8 +980,27 @@ jobs:
               }
           }
           EOF
-          printf 'build/\n.gradle/\n*.iml\nlocal.properties\n' > .gitignore
-          touch .v2 .changed
+          touch .v5 .changed
+          fi
+      - name: Fetch Google Sans fonts
+        run: |
+          mkdir -p app/src/main/assets/fonts
+          if [ -z "$(ls app/src/main/assets/fonts)" ]; then
+          python3 -m venv /tmp/v && /tmp/v/bin/pip install -q fonttools
+          /tmp/v/bin/python - <<'PY'
+          import urllib.request
+          from fontTools.ttLib import TTFont
+          for k, fid in {"gs": "google-sans", "gsf": "google-sans-flex", "gsc": "google-sans-code"}.items():
+              for w in (400, 500, 700):
+                  u = f"https://cdn.jsdelivr.net/fontsource/fonts/{fid}@latest/latin-{w}-normal.woff"
+                  try:
+                      open("/tmp/f.woff", "wb").write(urllib.request.urlopen(u, timeout=30).read())
+                      f = TTFont("/tmp/f.woff"); f.flavor = None
+                      f.save(f"app/src/main/assets/fonts/{k}-{w}.ttf"); print("ok", k, w)
+                  except Exception as e:
+                      print("skip", k, w, e)
+          PY
+          [ -n "$(ls app/src/main/assets/fonts)" ] && touch .changed || true
           fi
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
@@ -812,13 +1011,13 @@ jobs:
         with:
           name: tunes-debug
           path: app/build/outputs/apk/debug/*.apk
-      - name: Commit generated sources
+      - name: Commit updated sources
         run: |
           if [ -f .changed ]; then
             rm .changed
             git config user.name github-actions
             git config user.email actions@github.com
             git add -A
-            git commit -qm "tunes v2"
+            git commit -qm "tunes v5"
             git push
           fi
