@@ -23,6 +23,7 @@ android {
     packaging { resources.excludes += "META-INF/*" }
 }
 dependencies {
+    implementation("androidx.palette:palette-ktx:1.0.0")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.3")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.compose.material3:material3")
