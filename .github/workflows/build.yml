@@ -86,6 +86,7 @@ jobs:
           }
 
           /** M3E-style slider: gap around a bar handle, optionally wavy active track. */
+          @OptIn(ExperimentalMaterial3Api::class)
           @Composable
           fun WavySlider(
               value: Float, onChange: (Float) -> Unit, onDone: () -> Unit,
@@ -575,6 +576,13 @@ jobs:
               "Romance" to "romantic love songs", "Sad" to "sad emotional songs"
           )
 
+          object Mood { var cur by mutableStateOf<String?>(null) }
+
+          fun pickMood(vm: Vm, n: String, q: String) {
+              if (Mood.cur == n) { Mood.cur = null; return }
+              Mood.cur = n; vm.q = q; vm.search()
+          }
+
           fun fmt(ms: Long) = String.format("%d:%02d", ms / 60000, ms / 1000 % 60)
 
           @Composable
@@ -741,7 +749,7 @@ jobs:
               val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
               val greet = when { hour < 5 -> "Late night vibes"; hour < 12 -> "Good morning"; hour < 17 -> "Good afternoon"
                   hour < 22 -> "Good evening"; else -> "Late night vibes" }
-              val feed = if (vm.mood != null) vm.moodList else vm.suggestions
+              val feed = if (Mood.cur != null) vm.results else vm.suggestions
               val jump = vm.history.ifEmpty { feed }.take(6)
               val fresh = feed.drop(1).take(12)
               val rest = feed.drop(13)
@@ -761,13 +769,13 @@ jobs:
                       LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                           items(moods) { (n, q) ->
                               FilterChip(
-                                  selected = vm.mood == n, onClick = { vm.pickMood(n, q) }, label = { Text(n) },
-                                  leadingIcon = if (vm.mood == n) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null
+                                  selected = Mood.cur == n, onClick = { pickMood(vm, n, q) }, label = { Text(n) },
+                                  leadingIcon = if (Mood.cur == n) ({ Icon(Icons.Filled.Check, null, Modifier.size(18.dp)) }) else null
                               )
                           }
                       }
                   }
-                  if (vm.moodLoading || feed.isEmpty()) item {
+                  if ((Mood.cur != null && vm.loading) || feed.isEmpty()) item {
                       Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingBlob(Modifier.size(64.dp), contained = true) }
                   }
                   feed.firstOrNull()?.let { h ->
@@ -779,7 +787,7 @@ jobs:
                               AsyncImage(h.art, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
                               Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)))))
                               Column(Modifier.align(Alignment.BottomStart).padding(20.dp)) {
-                                  Text(if (vm.mood != null) "${vm.mood} pick" else "Featured", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.75f))
+                                  Text(if (Mood.cur != null) "${Mood.cur} pick" else "Featured", style = MaterialTheme.typography.labelLarge, color = Color.White.copy(alpha = 0.75f))
                                   Text(h.title, maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.headlineSmall,
                                       fontWeight = FontWeight.Bold, color = Color.White)
                                   Text(h.artist, maxLines = 1, color = Color.White.copy(alpha = 0.85f))
@@ -1001,6 +1009,14 @@ jobs:
                       print("skip", k, w, e)
           PY
           [ -n "$(ls app/src/main/assets/fonts)" ] && touch .changed || true
+          fi
+      - name: Ensure palette dependency
+        run: |
+          F=$(ls app/build.gradle.kts app/build.gradle 2>/dev/null | head -1)
+          if ! grep -q "androidx.palette" "$F"; then
+            if [[ "$F" == *.kts ]]; then L='    implementation("androidx.palette:palette-ktx:1.0.0")'; else L="    implementation 'androidx.palette:palette-ktx:1.0.0'"; fi
+            sed -i "0,/^dependencies {/s//dependencies {\n$L/" "$F"
+            touch .changed
           fi
       - uses: actions/setup-java@v4
         with: { distribution: temurin, java-version: 17 }
