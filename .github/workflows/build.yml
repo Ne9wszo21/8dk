@@ -990,6 +990,11 @@ jobs:
           EOF
           touch .v5 .changed
           fi
+       - name: Fix Prefs setter clash
+        run: |
+          sed -i 's/\bsetTheme(/applyTheme(/g; s/\bsetMode(/applyMode(/g; s/\bsetFont(/applyFont(/g; s/\bsetCustom(/applyCustom(/g' app/src/main/java/app/tunes/Themes.kt
+          touch .changed
+          
       - name: Fetch Google Sans fonts
         run: |
           mkdir -p app/src/main/assets/fonts
