@@ -7,7 +7,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Apply v5 update (first run only)
+      - name: Generate project v2 (first run only)
         run: |
           if [ ! -f .v5 ]; then
           J=app/src/main/java/app/tunes
